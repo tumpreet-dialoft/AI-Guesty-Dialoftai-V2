@@ -1,0 +1,432 @@
+{
+  "info": {
+    "name": "Thomas Hotel Middleware",
+    "description": "API collection for The Thomas Hotel voice receptionist middleware.\n\nSetup:\n1. Set the `base_url` variable (default: http://localhost:8080)\n2. Set `retell_secret` to match your RETELL_SHARED_SECRET env var\n3. Run requests in order: Health → Check Availability → Get Quote → Send Booking Link",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "retell_secret",
+      "value": "temp-secret-change-me"
+    },
+    {
+      "key": "check_in",
+      "value": "2026-07-10"
+    },
+    {
+      "key": "check_out",
+      "value": "2026-07-12"
+    },
+    {
+      "key": "guests",
+      "value": "2",
+      "type": "number"
+    },
+    {
+      "key": "test_phone",
+      "value": "+916280505657"
+    },
+    {
+      "key": "test_name",
+      "value": "tumpreet"
+    },
+    {
+      "key": "test_email",
+      "value": "tumpreet@dialoftai.com"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "No auth required. Returns status, version, uptime."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is ok', function () {",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.status).to.eql('ok');",
+              "  pm.expect(json.version).to.be.a('string');",
+              "  pm.expect(json.uptimeSec).to.be.a('number');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Check Availability",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call\": {\n    \"call_id\": \"test-call-001\",\n    \"from_number\": \"{{test_phone}}\"\n  },\n  \"name\": \"check_availability\",\n  \"args\": {\n    \"check_in_date\": \"{{check_in}}\",\n    \"check_out_date\": \"{{check_out}}\",\n    \"number_of_guests\": {{guests}}\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/check_availability",
+          "host": ["{{base_url}}"],
+          "path": ["check_availability"]
+        },
+        "description": "Checks all suites for availability. Returns available suites with nightly rates."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns availability result', function () {",
+              "  var json = pm.response.json();",
+              "  pm.expect(json).to.have.property('available');",
+              "  pm.expect(json).to.have.property('suites');",
+              "  if (json.available) {",
+              "    pm.expect(json.suites.length).to.be.greaterThan(0);",
+              "    pm.expect(json.suites[0]).to.have.property('name');",
+              "    pm.expect(json.suites[0]).to.have.property('nightly');",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3a. Get Quote — Premium Suite",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call\": {\n    \"call_id\": \"test-call-002\",\n    \"from_number\": \"{{test_phone}}\"\n  },\n  \"name\": \"get_quote\",\n  \"args\": {\n    \"suite_name\": \"Premium Suite\",\n    \"check_in_date\": \"{{check_in}}\",\n    \"check_out_date\": \"{{check_out}}\",\n    \"number_of_guests\": {{guests}}\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/get_quote",
+          "host": ["{{base_url}}"],
+          "path": ["get_quote"]
+        },
+        "description": "Gets a price quote for the Premium Suite."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns quote or error', function () {",
+              "  var json = pm.response.json();",
+              "  if (!json.error) {",
+              "    pm.expect(json).to.have.property('quote_id');",
+              "    pm.expect(json).to.have.property('suite');",
+              "    pm.expect(json).to.have.property('nightly');",
+              "    pm.expect(json).to.have.property('nights');",
+              "    pm.expect(json).to.have.property('cleaning');",
+              "    pm.expect(json).to.have.property('taxes');",
+              "    pm.expect(json).to.have.property('total');",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3b. Get Quote — Garden Suite",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call\": {\n    \"call_id\": \"test-call-003\",\n    \"from_number\": \"{{test_phone}}\"\n  },\n  \"name\": \"get_quote\",\n  \"args\": {\n    \"suite_name\": \"Garden Suite\",\n    \"check_in_date\": \"{{check_in}}\",\n    \"check_out_date\": \"{{check_out}}\",\n    \"number_of_guests\": {{guests}}\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/get_quote",
+          "host": ["{{base_url}}"],
+          "path": ["get_quote"]
+        },
+        "description": "Gets a price quote for the Garden Suite."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns quote or error', function () {",
+              "  var json = pm.response.json();",
+              "  if (!json.error) {",
+              "    pm.expect(json).to.have.property('quote_id');",
+              "    pm.expect(json.suite).to.eql('Garden Suite');",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Send Booking Link (SMS to tumpreet)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"call\": {\n    \"call_id\": \"test-call-004\",\n    \"from_number\": \"{{test_phone}}\"\n  },\n  \"name\": \"send_booking_link\",\n  \"args\": {\n    \"suite_name\": \"Garden Suite\",\n    \"check_in_date\": \"{{check_in}}\",\n    \"check_out_date\": \"{{check_out}}\",\n    \"number_of_guests\": {{guests}},\n    \"phone_number\": \"{{test_phone}}\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/send_booking_link",
+          "host": ["{{base_url}}"],
+          "path": ["send_booking_link"]
+        },
+        "description": "Sends an SMS with pre-filled booking link to tumpreet's phone (+916280505657)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('SMS sent or failed gracefully', function () {",
+              "  var json = pm.response.json();",
+              "  pm.expect(json).to.have.property('sent');",
+              "  pm.expect(typeof json.sent).to.eql('boolean');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Auth Rejection (no secret)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"args\": {\n    \"check_in_date\": \"2026-07-10\",\n    \"check_out_date\": \"2026-07-12\",\n    \"number_of_guests\": 2\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/check_availability",
+          "host": ["{{base_url}}"],
+          "path": ["check_availability"]
+        },
+        "description": "Should return 401 — no x-retell-secret header."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns 401 unauthorized', function () {",
+              "  pm.response.to.have.status(401);",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.error).to.eql('unauthorized');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Auth Rejection (wrong secret)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "wrong-secret-value" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"args\": {\n    \"check_in_date\": \"2026-07-10\",\n    \"check_out_date\": \"2026-07-12\",\n    \"number_of_guests\": 2\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/check_availability",
+          "host": ["{{base_url}}"],
+          "path": ["check_availability"]
+        },
+        "description": "Should return 401 — wrong secret."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns 401 unauthorized', function () {",
+              "  pm.response.to.have.status(401);",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.error).to.eql('unauthorized');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Validation — bad date",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"args\": {\n    \"check_in_date\": \"2020-01-01\",\n    \"check_out_date\": \"2020-01-03\",\n    \"number_of_guests\": 2\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/check_availability",
+          "host": ["{{base_url}}"],
+          "path": ["check_availability"]
+        },
+        "description": "Past date — should return error: true."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns error for past date', function () {",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.error).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Validation — unknown suite",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"args\": {\n    \"suite_name\": \"Royal Penthouse\",\n    \"check_in_date\": \"{{check_in}}\",\n    \"check_out_date\": \"{{check_out}}\",\n    \"number_of_guests\": 2\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/get_quote",
+          "host": ["{{base_url}}"],
+          "path": ["get_quote"]
+        },
+        "description": "Non-existent suite — should return error: true."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns error for unknown suite', function () {",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.error).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Validation — bad phone E.164",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"args\": {\n    \"suite_name\": \"Garden Suite\",\n    \"check_in_date\": \"{{check_in}}\",\n    \"check_out_date\": \"{{check_out}}\",\n    \"number_of_guests\": 2,\n    \"phone_number\": \"903-555-1234\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/send_booking_link",
+          "host": ["{{base_url}}"],
+          "path": ["send_booking_link"]
+        },
+        "description": "Non-E.164 phone — should return 400."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns 400 for bad phone', function () {",
+              "  pm.response.to.have.status(400);",
+              "  pm.expect(pm.response.json().sent).to.eql(false);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Lookup Reservation (v2 — disabled)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-retell-secret", "value": "{{retell_secret}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"args\": {\n    \"phone\": \"{{test_phone}}\",\n    \"email\": \"{{test_email}}\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/lookup_reservation",
+          "host": ["{{base_url}}"],
+          "path": ["lookup_reservation"]
+        },
+        "description": "v2 feature flag off — should return 404."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Returns 404 feature disabled', function () {",
+              "  pm.response.to.have.status(404);",
+              "  pm.expect(pm.response.json().error).to.eql('feature_disabled');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

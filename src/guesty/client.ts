@@ -5,7 +5,7 @@ import { sleep } from '../util/sleep';
 import { jitter } from '../util/jitter';
 import { getToken, invalidateToken, ApiType } from './tokenCache';
 
-const REQUEST_TIMEOUT_MS = 6000;
+const REQUEST_TIMEOUT_MS = 15000;
 const MAX_429_RETRIES = 3;
 const MAX_5XX_RETRIES = 3;
 const BACKOFF_BASE_MS = 500;

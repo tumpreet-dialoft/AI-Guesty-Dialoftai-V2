@@ -1,35 +1,61 @@
 import { guestyFetch } from './client';
 import { allEntries } from '../listings/map';
-import { shapeAvailability, AvailableSuite, buildAvailabilityResponse, AvailabilityResult } from '../shapers/availability';
+import {
+  shapeAvailability,
+  AvailableSuite,
+  buildAvailabilityResponse,
+  AvailabilityResult,
+} from '../shapers/availability';
 import { shapeQuote, ShapedQuote } from '../shapers/quote';
 import { log } from '../logger';
 
-// TODO: Verify the exact Booking Engine availability endpoint path.
-// This may be /availability/calendar, /listings/{id}/availability, or similar.
-// Check your Guesty Booking Engine API docs for the active version.
-const AVAILABILITY_PATH = '/availability';
+interface ListingPriceInfo {
+  basePrice: number;
+}
 
-// TODO: Verify the exact Booking Engine quote endpoint path.
-// This may be /quotes, /reservations/quote, or similar.
-const QUOTE_PATH = '/quotes';
+let listingPriceCache: Record<string, ListingPriceInfo> | null = null;
+
+async function getListingPrices(): Promise<Record<string, ListingPriceInfo>> {
+  if (listingPriceCache) return listingPriceCache;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = (await guestyFetch('booking_engine', 'GET', '/listings?limit=50')) as any;
+  const results = raw?.results ?? [];
+  const cache: Record<string, ListingPriceInfo> = {};
+  for (const listing of results) {
+    if (listing._id && listing.prices?.basePrice) {
+      cache[listing._id] = { basePrice: listing.prices.basePrice };
+    }
+  }
+  listingPriceCache = cache;
+  return cache;
+}
 
 export async function checkAvailability(
   checkIn: string,
   checkOut: string,
-  guests: number,
+  _guests: number,
 ): Promise<AvailabilityResult> {
   const entries = allEntries();
   const available: AvailableSuite[] = [];
 
-  // Sequential — never fan out parallel Guesty calls within one request
+  let prices: Record<string, ListingPriceInfo>;
+  try {
+    prices = await getListingPrices();
+  } catch (err) {
+    log.error({ err }, 'failed_to_fetch_listing_prices');
+    prices = {};
+  }
+
   for (const entry of entries) {
     try {
       const raw = await guestyFetch(
         'booking_engine',
         'GET',
-        `${AVAILABILITY_PATH}?listingId=${entry.listingId}&checkIn=${checkIn}&checkOut=${checkOut}&guestsCount=${guests}`,
+        `/listings/${entry.listingId}/calendar?from=${checkIn}&to=${checkOut}`,
       );
-      const shaped = shapeAvailability(entry.name, raw);
+      const basePrice = prices[entry.listingId]?.basePrice ?? 0;
+      const shaped = shapeAvailability(entry.name, raw, basePrice);
       if (shaped) {
         available.push(shaped);
       }
@@ -48,12 +74,16 @@ export async function getQuote(
   checkOut: string,
   guests: number,
 ): Promise<ShapedQuote | null> {
-  const raw = await guestyFetch('booking_engine', 'POST', QUOTE_PATH, {
+  const raw = await guestyFetch('booking_engine', 'POST', '/reservations/quotes', {
     listingId,
-    checkIn,
-    checkOut,
+    checkInDateLocalized: checkIn,
+    checkOutDateLocalized: checkOut,
     guestsCount: guests,
   });
 
   return shapeQuote(suiteName, raw);
+}
+
+export function _resetListingPriceCacheForTest(): void {
+  listingPriceCache = null;
 }

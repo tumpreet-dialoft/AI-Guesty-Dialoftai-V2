@@ -45,7 +45,7 @@ describe('POST /send_booking_link', () => {
     const callArgs = mockCreate.mock.calls[0][0] as { to: string; from: string; body: string };
     expect(callArgs.to).toBe('+19035551234');
     expect(callArgs.body).toContain('thethomastyler.guestybookings.com');
-    expect(callArgs.body).toContain('lst_garden_123');
+    expect(callArgs.body).toContain('lst_garden_004');
   });
 
   it('bad E.164 phone returns 400', async () => {

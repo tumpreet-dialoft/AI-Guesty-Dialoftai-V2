@@ -24,6 +24,28 @@ function tokenResp() {
   };
 }
 
+const MOCK_QUOTE = {
+  _id: 'q_abc123',
+  rates: {
+    ratePlans: [
+      {
+        ratePlan: {
+          money: {
+            fareAccommodation: 380,
+            fareCleaning: 75,
+            totalTaxes: 61,
+            hostPayout: 516,
+          },
+          days: [
+            { date: '2099-07-04', price: 190 },
+            { date: '2099-07-05', price: 190 },
+          ],
+        },
+      },
+    ],
+  },
+};
+
 describe('POST /get_quote', () => {
   beforeEach(() => {
     _resetForTest();
@@ -37,12 +59,7 @@ describe('POST /get_quote', () => {
         ok: true,
         status: 200,
         headers: { get: () => null },
-        text: async () =>
-          JSON.stringify({
-            _id: 'q_abc123',
-            rates: { basePrice: 380, cleaningFee: 75, taxes: 61, total: 896 },
-            nights: 2,
-          }),
+        text: async () => JSON.stringify(MOCK_QUOTE),
       };
     });
 
@@ -62,11 +79,11 @@ describe('POST /get_quote', () => {
     expect(res.body).toEqual({
       quote_id: 'q_abc123',
       suite: 'Garden Suite',
-      nightly: 380,
+      nightly: 190,
       nights: 2,
       cleaning: 75,
       taxes: 61,
-      total: 896,
+      total: 516,
     });
   });
 

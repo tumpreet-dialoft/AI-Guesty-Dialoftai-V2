@@ -11,21 +11,37 @@ import { shapeAvailability, buildAvailabilityResponse } from '../../src/shapers/
 import { shapeQuote } from '../../src/shapers/quote';
 
 describe('shapeAvailability', () => {
-  it('returns shaped suite when available', () => {
-    const raw = { available: true, rates: { basePrice: 379.5 } };
-    const result = shapeAvailability('Garden Suite', raw);
-    expect(result).toEqual({ name: 'Garden Suite', nightly: 380 });
+  it('returns shaped suite when all days are available', () => {
+    const raw = [
+      { date: '2026-07-10', status: 'available' },
+      { date: '2026-07-11', status: 'available' },
+    ];
+    const result = shapeAvailability('Premium Suite', raw, 255);
+    expect(result).toEqual({ name: 'Premium Suite', nightly: 255 });
   });
 
-  it('returns null when not available', () => {
-    const raw = { available: false };
-    const result = shapeAvailability('Garden Suite', raw);
+  it('returns null when a day is not available', () => {
+    const raw = [
+      { date: '2026-07-10', status: 'available' },
+      { date: '2026-07-11', status: 'booked' },
+    ];
+    const result = shapeAvailability('Premium Suite', raw, 255);
     expect(result).toBeNull();
   });
 
-  it('returns null when nightly rate is missing', () => {
-    const raw = { available: true };
-    const result = shapeAvailability('Garden Suite', raw);
+  it('returns null when response is empty array', () => {
+    const result = shapeAvailability('Garden Suite', [], 235);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when response is not an array', () => {
+    const result = shapeAvailability('Garden Suite', { available: true }, 235);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when basePrice is 0', () => {
+    const raw = [{ date: '2026-07-10', status: 'available' }];
+    const result = shapeAvailability('Garden Suite', raw, 0);
     expect(result).toBeNull();
   });
 
@@ -48,27 +64,38 @@ describe('shapeQuote', () => {
     const raw = {
       _id: 'q_8sd9f7',
       rates: {
-        basePrice: 379.5,
-        cleaningFee: 74.99,
-        taxes: 61.23,
-        total: 895.72,
+        ratePlans: [
+          {
+            ratePlan: {
+              money: {
+                fareAccommodation: 359.49,
+                fareCleaning: 0,
+                totalTaxes: 53.92,
+                hostPayout: 413.41,
+              },
+              days: [
+                { date: '2026-07-10', price: 176.44 },
+                { date: '2026-07-11', price: 183.05 },
+              ],
+            },
+          },
+        ],
       },
-      nights: 2,
     };
-    const result = shapeQuote('Garden Suite', raw);
+    const result = shapeQuote('Premium Suite', raw);
     expect(result).toEqual({
       quote_id: 'q_8sd9f7',
-      suite: 'Garden Suite',
-      nightly: 380,
+      suite: 'Premium Suite',
+      nightly: 180,
       nights: 2,
-      cleaning: 75,
-      taxes: 61,
-      total: 896,
+      cleaning: 0,
+      taxes: 54,
+      total: 413,
     });
   });
 
-  it('returns null when a required field is missing', () => {
-    const raw = { _id: 'q_abc', rates: { basePrice: 300 } };
+  it('returns null when money block is missing', () => {
+    const raw = { _id: 'q_abc', rates: { ratePlans: [] } };
     const result = shapeQuote('Garden Suite', raw);
     expect(result).toBeNull();
   });

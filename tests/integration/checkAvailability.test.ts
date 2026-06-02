@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../../src/index';
 import { _resetForTest } from '../../src/guesty/tokenCache';
+import { _resetListingPriceCacheForTest } from '../../src/guesty/bookingEngine';
 
 vi.mock('../../src/util/sleep', () => ({
   sleep: vi.fn().mockResolvedValue(undefined),
@@ -24,28 +25,52 @@ function tokenResp() {
   };
 }
 
-function availResp(available: boolean, basePrice?: number) {
-  const body = available ? { available: true, rates: { basePrice } } : { available: false };
+const LISTINGS_RESP = {
+  results: [
+    { _id: 'lst_psv_001', prices: { basePrice: 255 } },
+    { _id: 'lst_premium_002', prices: { basePrice: 245 } },
+    { _id: 'lst_main_003', prices: { basePrice: 255 } },
+    { _id: 'lst_garden_004', prices: { basePrice: 235 } },
+    { _id: 'lst_ada_005', prices: { basePrice: 240 } },
+  ],
+};
+
+function calendarResp(available: boolean) {
+  const days = [
+    { date: '2099-07-04', status: available ? 'available' : 'booked' },
+    { date: '2099-07-05', status: available ? 'available' : 'booked' },
+  ];
   return {
     ok: true,
     status: 200,
     headers: { get: () => null },
-    text: async () => JSON.stringify(body),
+    text: async () => JSON.stringify(days),
+  };
+}
+
+function listingsResp() {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    text: async () => JSON.stringify(LISTINGS_RESP),
   };
 }
 
 describe('POST /check_availability', () => {
   beforeEach(() => {
     _resetForTest();
+    _resetListingPriceCacheForTest();
     mockFetch.mockReset();
   });
 
   it('happy path returns shaped JSON with available suites', async () => {
     mockFetch.mockImplementation(async (url: string) => {
-      if (String(url).includes('oauth2/token')) return tokenResp();
-      if (String(url).includes('lst_garden_123')) return availResp(true, 380);
-      if (String(url).includes('lst_premium_456')) return availResp(true, 295);
-      return availResp(false);
+      const u = String(url);
+      if (u.includes('oauth2/token')) return tokenResp();
+      if (u.includes('/listings?') || u.includes('/listings?limit')) return listingsResp();
+      if (u.includes('/calendar')) return calendarResp(true);
+      return calendarResp(false);
     });
 
     const res = await request(app)
@@ -83,18 +108,23 @@ describe('POST /check_availability', () => {
   });
 
   it('Guesty 429 then success returns shaped JSON', async () => {
-    let requestCount = 0;
+    let calendarCallCount = 0;
     mockFetch.mockImplementation(async (url: string) => {
-      if (String(url).includes('oauth2/token')) return tokenResp();
-      requestCount++;
-      if (requestCount === 1) {
-        return {
-          ok: false,
-          status: 429,
-          headers: { get: (k: string) => (k === 'Retry-After' ? '1' : null) },
-        };
+      const u = String(url);
+      if (u.includes('oauth2/token')) return tokenResp();
+      if (u.includes('/listings?')) return listingsResp();
+      if (u.includes('/calendar')) {
+        calendarCallCount++;
+        if (calendarCallCount === 1) {
+          return {
+            ok: false,
+            status: 429,
+            headers: { get: (k: string) => (k === 'Retry-After' ? '1' : null) },
+          };
+        }
+        return calendarResp(true);
       }
-      return availResp(true, 300);
+      return calendarResp(false);
     });
 
     const res = await request(app)
@@ -114,8 +144,10 @@ describe('POST /check_availability', () => {
 
   it('all unavailable returns available: false, suites: []', async () => {
     mockFetch.mockImplementation(async (url: string) => {
-      if (String(url).includes('oauth2/token')) return tokenResp();
-      return availResp(false);
+      const u = String(url);
+      if (u.includes('oauth2/token')) return tokenResp();
+      if (u.includes('/listings?')) return listingsResp();
+      return calendarResp(false);
     });
 
     const res = await request(app)

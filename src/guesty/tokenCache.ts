@@ -26,7 +26,7 @@ const caches: Record<ApiType, TokenCacheEntry> = {
 };
 
 interface TokenEndpointConfig {
-  baseUrl: string;
+  tokenUrl: string;
   clientId: string;
   clientSecret: string;
 }
@@ -41,14 +41,14 @@ async function fetchToken(cfg: TokenEndpointConfig): Promise<CachedToken> {
     client_secret: cfg.clientSecret,
   });
 
-  const resp = await fetch(`${cfg.baseUrl}/oauth2/token`, {
+  const resp = await fetch(cfg.tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   });
 
   if (!resp.ok) {
-    log.error({ status: resp.status, api: cfg.baseUrl }, 'token_fetch_failed');
+    log.error({ status: resp.status, api: cfg.tokenUrl }, 'token_fetch_failed');
     throw new GuestyError('token_fetch_failed', `HTTP ${resp.status} from token endpoint`);
   }
 
@@ -71,13 +71,13 @@ function isExpiredOrNearExpiry(entry: CachedToken): boolean {
 export function getTokenEndpointConfig(api: ApiType): TokenEndpointConfig {
   if (api === 'booking_engine') {
     return {
-      baseUrl: config.GUESTY_BE_BASE_URL,
+      tokenUrl: config.GUESTY_BE_TOKEN_URL,
       clientId: config.GUESTY_BE_CLIENT_ID,
       clientSecret: config.GUESTY_BE_CLIENT_SECRET,
     };
   }
   return {
-    baseUrl: config.GUESTY_OAPI_BASE_URL,
+    tokenUrl: config.GUESTY_OAPI_TOKEN_URL,
     clientId: config.GUESTY_OAPI_CLIENT_ID,
     clientSecret: config.GUESTY_OAPI_CLIENT_SECRET,
   };

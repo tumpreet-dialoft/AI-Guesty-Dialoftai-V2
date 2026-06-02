@@ -31,10 +31,12 @@ const baseSchema = z.object({
   GUESTY_BE_CLIENT_ID: z.string().min(1, 'GUESTY_BE_CLIENT_ID is required'),
   GUESTY_BE_CLIENT_SECRET: z.string().min(1, 'GUESTY_BE_CLIENT_SECRET is required'),
   GUESTY_BE_BASE_URL: z.string().url().default('https://booking.guesty.com/api'),
+  GUESTY_BE_TOKEN_URL: z.string().url().default('https://booking.guesty.com/oauth2/token'),
 
   GUESTY_OAPI_CLIENT_ID: z.string().default(''),
   GUESTY_OAPI_CLIENT_SECRET: z.string().default(''),
   GUESTY_OAPI_BASE_URL: z.string().url().default('https://open-api.guesty.com/v1'),
+  GUESTY_OAPI_TOKEN_URL: z.string().url().default('https://open-api.guesty.com/oauth2/token'),
 
   BOOKING_SITE: z
     .string()

@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../src/config', () => ({
   config: {
     GUESTY_BE_BASE_URL: 'https://booking.guesty.com/api',
+    GUESTY_BE_TOKEN_URL: 'https://booking.guesty.com/oauth2/token',
     GUESTY_BE_CLIENT_ID: 'test_be_id',
     GUESTY_BE_CLIENT_SECRET: 'test_be_secret',
     GUESTY_OAPI_BASE_URL: 'https://open-api.guesty.com/v1',
+    GUESTY_OAPI_TOKEN_URL: 'https://open-api.guesty.com/oauth2/token',
     GUESTY_OAPI_CLIENT_ID: 'test_oapi_id',
     GUESTY_OAPI_CLIENT_SECRET: 'test_oapi_secret',
     LOG_LEVEL: 'silent',
