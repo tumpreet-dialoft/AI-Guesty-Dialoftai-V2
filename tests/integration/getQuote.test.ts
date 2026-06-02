@@ -26,6 +26,8 @@ function tokenResp() {
 
 const MOCK_QUOTE = {
   _id: 'q_abc123',
+  checkInDateLocalized: '2099-07-04',
+  checkOutDateLocalized: '2099-07-06',
   rates: {
     ratePlans: [
       {
@@ -52,7 +54,7 @@ describe('POST /get_quote', () => {
     mockFetch.mockReset();
   });
 
-  it('happy path returns the seven fields', async () => {
+  it('happy path returns the seven fields (root-level args)', async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (String(url).includes('oauth2/token')) return tokenResp();
       return {
@@ -67,12 +69,10 @@ describe('POST /get_quote', () => {
       .post('/get_quote')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Garden Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-        },
+        suite_name: 'Garden Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
       });
 
     expect(res.status).toBe(200);
@@ -92,12 +92,10 @@ describe('POST /get_quote', () => {
       .post('/get_quote')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Nonexistent Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-        },
+        suite_name: 'Nonexistent Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
       });
 
     expect(res.status).toBe(200);
@@ -114,12 +112,10 @@ describe('POST /get_quote', () => {
       .post('/get_quote')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Garden Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-        },
+        suite_name: 'Garden Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
       });
 
     expect(res.status).toBe(200);

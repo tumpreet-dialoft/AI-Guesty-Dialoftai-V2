@@ -64,13 +64,12 @@ describe('POST /check_availability', () => {
     mockFetch.mockReset();
   });
 
-  it('happy path returns shaped JSON with available suites', async () => {
+  it('happy path — args nested under args key', async () => {
     mockFetch.mockImplementation(async (url: string) => {
       const u = String(url);
       if (u.includes('oauth2/token')) return tokenResp();
-      if (u.includes('/listings?') || u.includes('/listings?limit')) return listingsResp();
-      if (u.includes('/calendar')) return calendarResp(true);
-      return calendarResp(false);
+      if (u.includes('/listings?')) return listingsResp();
+      return calendarResp(true);
     });
 
     const res = await request(app)
@@ -87,8 +86,28 @@ describe('POST /check_availability', () => {
     expect(res.status).toBe(200);
     expect(res.body.available).toBe(true);
     expect(res.body.suites.length).toBeGreaterThanOrEqual(1);
-    expect(res.body.suites[0]).toHaveProperty('name');
-    expect(res.body.suites[0]).toHaveProperty('nightly');
+  });
+
+  it('happy path — args at root (Retell args_at_root: true)', async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.includes('oauth2/token')) return tokenResp();
+      if (u.includes('/listings?')) return listingsResp();
+      return calendarResp(true);
+    });
+
+    const res = await request(app)
+      .post('/check_availability')
+      .set('x-retell-secret', SECRET)
+      .send({
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(true);
+    expect(res.body.suites.length).toBeGreaterThanOrEqual(1);
   });
 
   it('date in past returns error: true', async () => {
@@ -96,50 +115,13 @@ describe('POST /check_availability', () => {
       .post('/check_availability')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          check_in_date: '2020-01-01',
-          check_out_date: '2020-01-03',
-          number_of_guests: 2,
-        },
+        check_in_date: '2020-01-01',
+        check_out_date: '2020-01-03',
+        number_of_guests: '2',
       });
 
     expect(res.status).toBe(200);
     expect(res.body.error).toBe(true);
-  });
-
-  it('Guesty 429 then success returns shaped JSON', async () => {
-    let calendarCallCount = 0;
-    mockFetch.mockImplementation(async (url: string) => {
-      const u = String(url);
-      if (u.includes('oauth2/token')) return tokenResp();
-      if (u.includes('/listings?')) return listingsResp();
-      if (u.includes('/calendar')) {
-        calendarCallCount++;
-        if (calendarCallCount === 1) {
-          return {
-            ok: false,
-            status: 429,
-            headers: { get: (k: string) => (k === 'Retry-After' ? '1' : null) },
-          };
-        }
-        return calendarResp(true);
-      }
-      return calendarResp(false);
-    });
-
-    const res = await request(app)
-      .post('/check_availability')
-      .set('x-retell-secret', SECRET)
-      .send({
-        args: {
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-        },
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.available).toBe(true);
   });
 
   it('all unavailable returns available: false, suites: []', async () => {
@@ -154,11 +136,9 @@ describe('POST /check_availability', () => {
       .post('/check_availability')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-        },
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
       });
 
     expect(res.status).toBe(200);

@@ -5,24 +5,16 @@ import { validateDateRange } from '../util/dates';
 import { resolveListingId } from '../listings/map';
 import { buildBookingLink } from '../links/bookingLink';
 import { sendSms } from '../twilio/sms';
+import { extractArgs } from '../util/extractArgs';
 
 const E164_RE = /^\+[1-9]\d{1,14}$/;
 
-const schema = z.object({
-  call: z
-    .object({
-      call_id: z.string(),
-      from_number: z.string(),
-    })
-    .optional(),
-  name: z.string().optional(),
-  args: z.object({
-    suite_name: z.string(),
-    check_in_date: z.string(),
-    check_out_date: z.string(),
-    number_of_guests: z.number().int().min(1).max(10),
-    phone_number: z.string().regex(E164_RE, 'phone_number must be E.164 format'),
-  }),
+const argsSchema = z.object({
+  suite_name: z.string(),
+  check_in_date: z.string(),
+  check_out_date: z.string(),
+  number_of_guests: z.coerce.number().int().min(1).max(10),
+  phone_number: z.string().regex(E164_RE, 'phone_number must be E.164 format'),
 });
 
 const router = Router();
@@ -32,7 +24,8 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
   const requestId = req.headers['x-request-id'] ?? crypto.randomUUID();
 
   try {
-    const parsed = schema.safeParse(req.body);
+    const raw = extractArgs(req);
+    const parsed = argsSchema.safeParse(raw);
     if (!parsed.success) {
       log.warn({ requestId, errors: parsed.error.issues }, 'validation_failed');
       res.status(400).json({ sent: false, message: 'Invalid request body' });
@@ -40,7 +33,7 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
     }
 
     const { suite_name, check_in_date, check_out_date, number_of_guests, phone_number } =
-      parsed.data.args;
+      parsed.data;
 
     const listingId = resolveListingId(suite_name);
     if (!listingId) {

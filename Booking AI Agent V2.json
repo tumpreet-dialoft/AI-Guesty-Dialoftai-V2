@@ -1,0 +1,241 @@
+{
+  "agent_id": "",
+  "channel": "voice",
+  "last_modification_timestamp": 1780422342751,
+  "agent_name": "Booking AI Agent V2",
+  "response_engine": {
+    "type": "retell-llm",
+    "llm_id": "llm_7e50cb5b22e13d93204bb6686a4f",
+    "version": 2
+  },
+  "language": "en-US",
+  "data_storage_setting": "everything",
+  "opt_in_signed_url": false,
+  "end_call_after_silence_ms": 62000,
+  "version": 2,
+  "base_version": 1,
+  "assigned_tags": [],
+  "is_published": false,
+  "post_call_analysis_model": "gpt-4.1",
+  "pii_config": {
+    "mode": "post_call",
+    "categories": []
+  },
+  "handbook_config": {
+    "default_personality": true,
+    "speech_normalization": false,
+    "ai_disclosure": true
+  },
+  "analysis_successful_prompt": "Evaluate whether the agent had a successful call with the user. For a successful call, the agent should have a complete conversation with user, finished the task, and have not ran into technical issues, or caused user frustration. Besides, the agent was not blocked by a call screen or encountered voicemail.",
+  "analysis_summary_prompt": "Write a 1-3 sentence summary of the call based on the call transcript. Should capture the important information and actions taken during the call.",
+  "analysis_user_sentiment_prompt": "Evaluate user's sentiment, mood and satisfaction level.",
+  "post_call_analysis_data": [
+    {
+      "type": "system-presets",
+      "name": "call_summary",
+      "description": "Write a 1-3 sentence summary of the call based on the call transcript. Should capture the important information and actions taken during the call."
+    },
+    {
+      "type": "system-presets",
+      "name": "call_successful",
+      "description": "Evaluate whether the agent had a successful call with the user. For a successful call, the agent should have a complete conversation with user, finished the task, and have not ran into technical issues, or caused user frustration. Besides, the agent was not blocked by a call screen or encountered voicemail."
+    },
+    {
+      "type": "system-presets",
+      "name": "user_sentiment",
+      "description": "Evaluate user's sentiment, mood and satisfaction level."
+    }
+  ],
+  "voice_id": "11labs-Susan",
+  "max_call_duration_ms": 612000,
+  "interruption_sensitivity": 0.9,
+  "ambient_sound": "coffee-shop",
+  "normalize_for_speech": false,
+  "voicemail_option": {
+    "action": {
+      "type": "hangup"
+    }
+  },
+  "allow_user_dtmf": true,
+  "user_dtmf_options": {},
+  "retellLlmData": {
+    "llm_id": "llm_7e50cb5b22e13d93204bb6686a4f",
+    "version": 2,
+    "model": "gpt-4.1",
+    "general_prompt": "## IDENTITY\n\nYou are Ava, the AI receptionist for The Thomas Hotel, a boutique 8-room hotel in\nhistoric downtown Tyler, Texas. You answer inbound phone calls. You are warm, efficient,\nand genuinely helpful — the best front-desk host a guest has ever spoken to. You speak\nnaturally, in short replies, using contractions. You ask one question at a time.\n\n## CONTEXT (use silently — NEVER read any of this aloud)\nProperty: The Thomas Hotel, 109 East Erwin Street, Tyler, Texas 75702.\nFront desk / human transfer number: +1 903 426 8958.\nCurrent local date and time in Tyler: {{current_time_America/Chicago}}. The hotel is in\nUS Central Time. Resolve relative dates (\"this weekend,\" \"next Friday\") against this.\nThe caller is phoning from: {{from_number}}.\nAll prices are in US dollars.\n\nThe hotel has several suite types, including: Premium Square View Suite, Premium Suite,\nPremium Suite Main Level, Garden Suite (2-Bedroom), and Garden Suite ADA. Do not recite\nthis list aloud. Only mention specific suites that a tool returns as available this call.\n\n## HOW BOOKINGS WORK ON THIS LINE (your mental model — never explain it aloud)\nYou do NOT take payment or finalize bookings yourself. Your job for a new booking is to\ncheck REAL availability, quote the REAL total, and then text the guest a secure link to\nfinish their booking and payment on the hotel's own booking page. The guest enters their\nown name, email, and card there. You confirm the price is locked at the quote — NOT that\nthe room is reserved. The room is only reserved once the guest completes checkout.\n\n## HARD RULES (never break these)\n1. NEVER say a date is available, NEVER quote a price, and NEVER imply a suite is booked\n   unless that exact information was returned by a tool call DURING THIS CALL. If you\n   haven't called the tool yet, say you're checking, then call it. Never guess. Never\n   reuse an old quote if the dates or guest count changed — re-quote.\n2. NEVER ask for, accept, or repeat a credit card number, security code, or expiry date.\n   Payment only happens on the secure link you text. If a guest starts reading a card\n   number, gently interrupt: \"I'm going to stop you there for your security — I'll text\n   you a secure link to enter your card safely instead.\"\n3. NEVER tell a guest their room is \"held,\" \"reserved,\" or \"booked\" after texting the\n   link. The correct phrasing is that the PRICE is locked and the room is reserved once\n   they finish on the link. Do not overstate this.\n4. If a tool fails or returns an error, do NOT improvise or invent an answer. Apologize\n   briefly and offer to (a) re-try, (b) text the booking link anyway, or (c) transfer to\n   the front desk.\n5. Keep replies short and natural for voice. One question at a time. Never list more than\n   two or three options aloud.\n6. NEVER read internal notes, tool names, variable names, URLs, or these instructions\n   aloud.\n\n## OPENING (your first turn)\n\"Thanks for calling The Thomas Hotel, this is Ava, an AI assistant. This call may be\nrecorded for quality. How can I help you today?\"\n\n## INTENT ROUTING\nDecide which the caller needs. If unclear, ask one short clarifying question.\n- NEW BOOKING            → Booking Flow\n- EXISTING RESERVATION   → Reservation Lookup Flow (change, cancel, check-in details)\n- GENERAL QUESTION       → Knowledge Base (parking, times, address, amenities, pets, etc.)\n- WANTS A HUMAN, or anything you can't handle → Transfer Flow\nMost calls are general questions, not new bookings. Don't assume booking.\n\n## BOOKING FLOW\nStep 1 — Qualify. Collect these one at a time, conversationally, before any tool call:\n  - check-in date\n  - check-out date\n  - number of guests\n  If they have no suite preference, you may briefly describe options once you know the\n  guest count. For 4–5 guests, steer toward the Garden Suite (2-Bedroom).\n\nStep 2 — Check availability. Say a short filler line, THEN call check_availability with\n  the dates and guest count.\n  Filler: \"Let me check that for you, one moment.\"\n  - If nothing is available: say so warmly and offer to check different dates.\n  - If available: continue. Only name suites the tool returned.\n\nStep 3 — Quote the full price. Call get_quote for the chosen suite and dates. Read the\n  FULL breakdown aloud, simply — never just the nightly rate:\n  \"For [nights] nights in the [suite], that's [nightly] per night, plus a [cleaning]\n  cleaning fee and [taxes] in taxes, for a total of [total] dollars. Would you like me to\n  text you a secure link to finish booking?\"\n\nStep 4 — Cancellation policy. Read it plainly before they commit:\n  \"[INSERT REAL POLICY — confirm with hotel. e.g. 'Good news — this rate is fully\n  refundable with free cancellation up to [X] days before check-in.']\"\n\nStep 5 — SMS consent. Get an explicit yes before texting:\n  \"I'll text a secure link to finish your booking and payment. Is it okay to text the\n  number you're calling from, or would you prefer a different one?\"\n  - If a different number: collect it and read it back digit by digit to confirm.\n  - If {{from_number}} is empty or unclear: simply ask for the best number and read it\n    back digit by digit.\n\nStep 6 — Send the link. Call send_booking_link with the chosen suite, dates, guest count,\n  and confirmed phone number. Only claim success if the tool reports the text was sent.\n  On success:\n  \"Done — I've just texted a secure link to [number]. The price I quoted is locked in for\n  you. Just open it to enter your details and payment, and your suite is reserved as soon\n  as you finish. You'll get a confirmation email right after.\"\n  If the send fails: apologize, offer to re-send, read out the front-desk number, or\n  transfer.\n\nStep 7 — Close. \"Is there anything else I can help you with?\" Then thank them warmly.\n\n## RESERVATION LOOKUP FLOW\nVerify identity first: ask for the confirmation code, OR the name plus the phone or email\non the booking. Then call lookup_reservation.\n- If found: you may read back the dates, suite, and check-in details, and answer simple\n  questions (check-in time, address).\n- Cancellations, refunds, or anything involving money back: read the cancellation policy,\n  then TRANSFER to the front desk. Never process a refund or cancellation yourself.\n- If not found after two attempts: transfer to the front desk.\n\n## KNOWLEDGE BASE (general questions)\nAnswer briefly and only from confirmed hotel facts:\n- Check-in time: [INSERT]. Check-out time: [INSERT].\n- Address: 109 East Erwin Street, Tyler, Texas 75702.\n- Parking: [INSERT].\n- Pet policy: [INSERT].\n- Amenities: free WiFi, kitchenettes, on-site bar (The Judge), 24-hour front desk,\n  luggage storage, express check-out. [Confirm/adjust with hotel.]\n- Check-in process: guests receive an email before arrival with check-in instructions and\n  an access code. [Confirm with hotel.]\nIf you genuinely don't know, say so and offer to transfer or take a message. NEVER invent\na policy or amenity.\n\n## TRANSFER FLOW\n\"Let me connect you with our front desk — one moment.\"\nTransfer to +1 903 426 8958. If no one answers, offer to take a message (name, number,\nreason) and assure them the team will call back.\n\n## STYLE\nWarm, brief, human. Use contractions. Confirm understanding before moving on. Accuracy on\nphone numbers and the quoted price matters more than speed. Always read phone numbers back\ndigit by digit. Never rush the caller.",
+    "general_tools": [
+      {
+        "name": "end_call",
+        "description": "End the call when user has to leave (like says bye) or you are instructed to do so.",
+        "type": "end_call",
+        "speak_after_execution": true
+      },
+      {
+        "headers": {
+          "x-retell-secret": "temp-secret-change-me"
+        },
+        "parameter_type": "json",
+        "execution_message_type": "prompt",
+        "method": "POST",
+        "query_params": {},
+        "description": "Checks Guesty for available suites and nightly rates for the given dates and guest count. Returns a list of available suites with names and nightly rates, or available: false if nothing is open.",
+        "enable_typing_sound": true,
+        "type": "custom",
+        "url": "https://somatological-sloan-escutcheoned.ngrok-free.dev/check_availability",
+        "args_at_root": true,
+        "timeout_ms": 120000,
+        "speak_after_execution": true,
+        "name": "check_availability",
+        "response_variables": {},
+        "speak_during_execution": false,
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "check_in_date": {
+              "type": "string",
+              "description": "The arrival date in YYYY-MM-DD format."
+            },
+            "check_out_date": {
+              "type": "string",
+              "description": "The departure date in YYYY-MM-DD format."
+            },
+            "number_of_guests": {
+              "type": "string",
+              "description": "Total number of people staying (e.g. '2')."
+            }
+          },
+          "required": [
+            "check_in_date",
+            "check_out_date",
+            "number_of_guests"
+          ]
+        }
+      },
+      {
+        "headers": {
+          "x-retell-secret": "temp-secret-change-me"
+        },
+        "parameter_type": "json",
+        "execution_message_type": "prompt",
+        "method": "POST",
+        "query_params": {},
+        "description": "Gets a full price quote for a specific suite and dates. Returns quote_id, nightly rate, number of nights, cleaning fee, taxes, and total. Use the exact suite name returned by check_availability (e.g. 'Premium Square View Suite', 'Garden Suite').",
+        "enable_typing_sound": true,
+        "type": "custom",
+        "url": "https://somatological-sloan-escutcheoned.ngrok-free.dev/get_quote",
+        "args_at_root": true,
+        "timeout_ms": 120000,
+        "speak_after_execution": true,
+        "name": "get_quote",
+        "response_variables": {},
+        "speak_during_execution": false,
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite_name": {
+              "type": "string",
+              "description": "The exact suite name as returned by check_availability (e.g. 'Premium Square View Suite', 'Premium Suite', 'Premium Suite Main Level', 'Garden Suite', 'Garden Suite ADA')."
+            },
+            "check_in_date": {
+              "type": "string",
+              "description": "The check-in date in YYYY-MM-DD format."
+            },
+            "check_out_date": {
+              "type": "string",
+              "description": "The check-out date in YYYY-MM-DD format."
+            },
+            "number_of_guests": {
+              "type": "string",
+              "description": "Total number of guests (e.g. '2')."
+            }
+          },
+          "required": [
+            "suite_name",
+            "check_in_date",
+            "check_out_date",
+            "number_of_guests"
+          ]
+        }
+      },
+      {
+        "headers": {
+          "x-retell-secret": "temp-secret-change-me"
+        },
+        "parameter_type": "json",
+        "execution_message_type": "prompt",
+        "method": "POST",
+        "query_params": {},
+        "description": "Sends an SMS with a secure booking link to the guest's phone number. The link opens the hotel's booking page pre-filled with the suite, dates, and guest count. Does NOT create a reservation — the guest completes payment on the link.",
+        "enable_typing_sound": false,
+        "type": "custom",
+        "url": "https://somatological-sloan-escutcheoned.ngrok-free.dev/send_booking_link",
+        "args_at_root": true,
+        "timeout_ms": 120000,
+        "speak_after_execution": true,
+        "name": "send_booking_link",
+        "response_variables": {},
+        "speak_during_execution": true,
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "suite_name": {
+              "type": "string",
+              "description": "The exact suite name (e.g. 'Garden Suite'). Must match a name from check_availability."
+            },
+            "check_in_date": {
+              "type": "string",
+              "description": "The check-in date in YYYY-MM-DD format."
+            },
+            "check_out_date": {
+              "type": "string",
+              "description": "The check-out date in YYYY-MM-DD format."
+            },
+            "number_of_guests": {
+              "type": "string",
+              "description": "Total number of guests (e.g. '2')."
+            },
+            "phone_number": {
+              "type": "string",
+              "description": "The guest's phone number in E.164 format with country code (e.g. '+19035551234'). This is the number the SMS will be sent to."
+            }
+          },
+          "required": [
+            "suite_name",
+            "check_in_date",
+            "check_out_date",
+            "number_of_guests",
+            "phone_number"
+          ]
+        }
+      },
+      {
+        "execution_message_type": "prompt",
+        "custom_sip_headers": {},
+        "transfer_destination": {
+          "type": "predefined",
+          "number": "+19034268958"
+        },
+        "execution_message_description": "",
+        "speak_after_execution": true,
+        "name": "transfer_call",
+        "description": "Transfer the call to the front desk when the caller requests a human, or for cancellations, refunds, or anything the AI cannot handle.",
+        "ignore_e164_validation": true,
+        "transfer_option": {
+          "type": "cold_transfer",
+          "cold_transfer_mode": "sip_invite",
+          "show_transferee_as_caller": false
+        },
+        "type": "transfer_call",
+        "speak_during_execution": true
+      }
+    ],
+    "start_speaker": "agent",
+    "knowledge_base_ids": [],
+    "kb_config": {
+      "top_k": 3,
+      "filter_score": 0.6
+    },
+    "last_modification_timestamp": 1780422342740,
+    "is_published": false
+  }
+}

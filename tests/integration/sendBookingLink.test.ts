@@ -22,20 +22,18 @@ describe('POST /send_booking_link', () => {
     mockCreate.mockReset();
   });
 
-  it('happy path sends SMS and returns sent: true', async () => {
+  it('happy path sends SMS and returns sent: true (root-level args)', async () => {
     mockCreate.mockResolvedValue({ sid: 'SM_test_123' });
 
     const res = await request(app)
       .post('/send_booking_link')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Garden Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-          phone_number: '+19035551234',
-        },
+        suite_name: 'Garden Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
+        phone_number: '+19035551234',
       });
 
     expect(res.status).toBe(200);
@@ -53,13 +51,11 @@ describe('POST /send_booking_link', () => {
       .post('/send_booking_link')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Garden Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-          phone_number: '903-555-1234',
-        },
+        suite_name: 'Garden Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
+        phone_number: '903-555-1234',
       });
 
     expect(res.status).toBe(400);
@@ -73,13 +69,11 @@ describe('POST /send_booking_link', () => {
       .post('/send_booking_link')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Garden Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-          phone_number: '+19035551234',
-        },
+        suite_name: 'Garden Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
+        phone_number: '+19035551234',
       });
 
     expect(res.status).toBe(200);
@@ -91,13 +85,11 @@ describe('POST /send_booking_link', () => {
       .post('/send_booking_link')
       .set('x-retell-secret', SECRET)
       .send({
-        args: {
-          suite_name: 'Nonexistent Suite',
-          check_in_date: '2099-07-04',
-          check_out_date: '2099-07-06',
-          number_of_guests: 2,
-          phone_number: '+19035551234',
-        },
+        suite_name: 'Nonexistent Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
+        phone_number: '+19035551234',
       });
 
     expect(res.status).toBe(200);
