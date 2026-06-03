@@ -1,16 +1,14 @@
+import fs from 'fs';
+import path from 'path';
 import { GuestyError } from '../errors';
 import { log } from '../logger';
 import { config } from '../config';
-
-// Single-instance in-memory cache. For >1 instance, swap to Redis:
-//   Store { accessToken, expiresAt } under a key per API.
-//   Use a distributed lock (e.g. Redlock) to prevent thundering herd on refresh.
 
 export type ApiType = 'booking_engine' | 'open_api';
 
 interface CachedToken {
   accessToken: string;
-  expiresAt: number; // epoch ms
+  expiresAt: number;
 }
 
 interface TokenCacheEntry {
@@ -20,10 +18,44 @@ interface TokenCacheEntry {
 
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+const TOKEN_FILE = path.join('/tmp', 'guesty-tokens.json');
+
 const caches: Record<ApiType, TokenCacheEntry> = {
   booking_engine: { cached: null, inflight: null },
   open_api: { cached: null, inflight: null },
 };
+
+function loadFromDisk(): void {
+  try {
+    if (!fs.existsSync(TOKEN_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
+    for (const api of ['booking_engine', 'open_api'] as ApiType[]) {
+      if (raw[api]?.accessToken && raw[api]?.expiresAt) {
+        caches[api].cached = {
+          accessToken: raw[api].accessToken,
+          expiresAt: raw[api].expiresAt,
+        };
+        log.info({ api }, 'token_loaded_from_disk');
+      }
+    }
+  } catch {
+    log.warn('token_disk_load_failed');
+  }
+}
+
+function saveToDisk(): void {
+  try {
+    const data: Record<string, CachedToken | null> = {};
+    for (const api of ['booking_engine', 'open_api'] as ApiType[]) {
+      data[api] = caches[api].cached;
+    }
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify(data), 'utf8');
+  } catch {
+    log.warn('token_disk_save_failed');
+  }
+}
+
+loadFromDisk();
 
 interface TokenEndpointConfig {
   tokenUrl: string;
@@ -32,9 +64,6 @@ interface TokenEndpointConfig {
 }
 
 async function fetchToken(cfg: TokenEndpointConfig): Promise<CachedToken> {
-  // TODO: Verify content-type against your Guesty account.
-  // Some Guesty endpoints expect application/x-www-form-urlencoded, others JSON.
-  // The Booking Engine API typically uses form-encoded. Adjust if needed.
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: cfg.clientId,
@@ -102,6 +131,7 @@ export async function getToken(api: ApiType): Promise<string> {
   try {
     const result = await promise;
     entry.cached = result;
+    saveToDisk();
     log.info({ api }, 'token_refreshed');
     return result.accessToken;
   } catch (err) {
@@ -114,6 +144,7 @@ export async function getToken(api: ApiType): Promise<string> {
 
 export function invalidateToken(api: ApiType): void {
   caches[api].cached = null;
+  saveToDisk();
 }
 
 export function _resetForTest(): void {
