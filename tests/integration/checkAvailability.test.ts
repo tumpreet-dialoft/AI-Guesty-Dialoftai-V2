@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../../src/index';
 import { _resetForTest } from '../../src/guesty/tokenCache';
-import { _resetListingPriceCacheForTest } from '../../src/guesty/bookingEngine';
 
 vi.mock('../../src/util/sleep', () => ({
   sleep: vi.fn().mockResolvedValue(undefined),
@@ -25,42 +24,53 @@ function tokenResp() {
   };
 }
 
-const LISTINGS_RESP = {
-  results: [
-    { _id: 'lst_psv_001', prices: { basePrice: 255 } },
-    { _id: 'lst_premium_002', prices: { basePrice: 245 } },
-    { _id: 'lst_main_003', prices: { basePrice: 255 } },
-    { _id: 'lst_garden_004', prices: { basePrice: 235 } },
-    { _id: 'lst_ada_005', prices: { basePrice: 240 } },
-  ],
-};
-
-function calendarResp(available: boolean) {
-  const days = [
-    { date: '2099-07-04', status: available ? 'available' : 'booked' },
-    { date: '2099-07-05', status: available ? 'available' : 'booked' },
-  ];
+function listingsWithAvailability(available: boolean) {
+  const allotmentVal = available ? 1 : 0;
   return {
     ok: true,
     status: 200,
     headers: { get: () => null },
-    text: async () => JSON.stringify(days),
-  };
-}
-
-function listingsResp() {
-  return {
-    ok: true,
-    status: 200,
-    headers: { get: () => null },
-    text: async () => JSON.stringify(LISTINGS_RESP),
+    text: async () =>
+      JSON.stringify({
+        results: [
+          {
+            _id: 'lst_psv_001',
+            prices: { basePrice: 255 },
+            nightlyRates: { '2099-07-04': 220, '2099-07-05': 180 },
+            allotment: { '2099-07-04': allotmentVal, '2099-07-05': allotmentVal },
+          },
+          {
+            _id: 'lst_premium_002',
+            prices: { basePrice: 245 },
+            nightlyRates: { '2099-07-04': 210, '2099-07-05': 170 },
+            allotment: { '2099-07-04': allotmentVal, '2099-07-05': allotmentVal },
+          },
+          {
+            _id: 'lst_main_003',
+            prices: { basePrice: 255 },
+            nightlyRates: { '2099-07-04': 220, '2099-07-05': 180 },
+            allotment: { '2099-07-04': allotmentVal, '2099-07-05': allotmentVal },
+          },
+          {
+            _id: 'lst_garden_004',
+            prices: { basePrice: 235 },
+            nightlyRates: { '2099-07-04': 200, '2099-07-05': 160 },
+            allotment: { '2099-07-04': allotmentVal, '2099-07-05': allotmentVal },
+          },
+          {
+            _id: 'lst_ada_005',
+            prices: { basePrice: 240 },
+            nightlyRates: { '2099-07-04': 210, '2099-07-05': 170 },
+            allotment: { '2099-07-04': allotmentVal, '2099-07-05': allotmentVal },
+          },
+        ],
+      }),
   };
 }
 
 describe('POST /check_availability', () => {
   beforeEach(() => {
     _resetForTest();
-    _resetListingPriceCacheForTest();
     mockFetch.mockReset();
   });
 
@@ -68,8 +78,7 @@ describe('POST /check_availability', () => {
     mockFetch.mockImplementation(async (url: string) => {
       const u = String(url);
       if (u.includes('oauth2/token')) return tokenResp();
-      if (u.includes('/listings?')) return listingsResp();
-      return calendarResp(true);
+      return listingsWithAvailability(true);
     });
 
     const res = await request(app)
@@ -92,8 +101,7 @@ describe('POST /check_availability', () => {
     mockFetch.mockImplementation(async (url: string) => {
       const u = String(url);
       if (u.includes('oauth2/token')) return tokenResp();
-      if (u.includes('/listings?')) return listingsResp();
-      return calendarResp(true);
+      return listingsWithAvailability(true);
     });
 
     const res = await request(app)
@@ -128,8 +136,7 @@ describe('POST /check_availability', () => {
     mockFetch.mockImplementation(async (url: string) => {
       const u = String(url);
       if (u.includes('oauth2/token')) return tokenResp();
-      if (u.includes('/listings?')) return listingsResp();
-      return calendarResp(false);
+      return listingsWithAvailability(false);
     });
 
     const res = await request(app)

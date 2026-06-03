@@ -7,41 +7,66 @@ vi.mock('../../src/logger', () => ({
   log: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-import { shapeAvailability, buildAvailabilityResponse } from '../../src/shapers/availability';
+import { shapeAvailabilityFromListing, buildAvailabilityResponse } from '../../src/shapers/availability';
 import { shapeQuote } from '../../src/shapers/quote';
 
-describe('shapeAvailability', () => {
-  it('returns shaped suite when all days are available', () => {
-    const raw = [
-      { date: '2026-07-10', status: 'available' },
-      { date: '2026-07-11', status: 'available' },
-    ];
-    const result = shapeAvailability('Premium Suite', raw, 255);
-    expect(result).toEqual({ name: 'Premium Suite', nightly: 255 });
+describe('shapeAvailabilityFromListing', () => {
+  it('returns shaped suite when all dates have allotment > 0', () => {
+    const listing = {
+      nightlyRates: { '2026-07-10': 220, '2026-07-11': 180 },
+      allotment: { '2026-07-10': 1, '2026-07-11': 2 },
+      prices: { basePrice: 255 },
+    };
+    const result = shapeAvailabilityFromListing('Premium Suite', listing);
+    expect(result).toEqual({ name: 'Premium Suite', nightly: 200 });
   });
 
-  it('returns null when a day is not available', () => {
-    const raw = [
-      { date: '2026-07-10', status: 'available' },
-      { date: '2026-07-11', status: 'booked' },
-    ];
-    const result = shapeAvailability('Premium Suite', raw, 255);
+  it('returns null when a date has allotment 0', () => {
+    const listing = {
+      nightlyRates: { '2026-07-10': 220, '2026-07-11': 180 },
+      allotment: { '2026-07-10': 1, '2026-07-11': 0 },
+      prices: { basePrice: 255 },
+    };
+    const result = shapeAvailabilityFromListing('Premium Suite', listing);
     expect(result).toBeNull();
   });
 
-  it('returns null when response is empty array', () => {
-    const result = shapeAvailability('Garden Suite', [], 235);
+  it('returns null when allotment is empty', () => {
+    const listing = {
+      nightlyRates: { '2026-07-10': 220 },
+      allotment: {},
+      prices: { basePrice: 235 },
+    };
+    const result = shapeAvailabilityFromListing('Garden Suite', listing);
     expect(result).toBeNull();
   });
 
-  it('returns null when response is not an array', () => {
-    const result = shapeAvailability('Garden Suite', { available: true }, 235);
+  it('returns null when allotment is missing', () => {
+    const listing = {
+      nightlyRates: { '2026-07-10': 220 },
+      prices: { basePrice: 235 },
+    };
+    const result = shapeAvailabilityFromListing('Garden Suite', listing);
     expect(result).toBeNull();
   });
 
-  it('returns null when basePrice is 0', () => {
-    const raw = [{ date: '2026-07-10', status: 'available' }];
-    const result = shapeAvailability('Garden Suite', raw, 0);
+  it('falls back to basePrice when nightlyRates is empty', () => {
+    const listing = {
+      nightlyRates: {},
+      allotment: { '2026-07-10': 1 },
+      prices: { basePrice: 235 },
+    };
+    const result = shapeAvailabilityFromListing('Garden Suite', listing);
+    expect(result).toEqual({ name: 'Garden Suite', nightly: 235 });
+  });
+
+  it('returns null when nightly rate is 0', () => {
+    const listing = {
+      nightlyRates: {},
+      allotment: { '2026-07-10': 1 },
+      prices: { basePrice: 0 },
+    };
+    const result = shapeAvailabilityFromListing('Garden Suite', listing);
     expect(result).toBeNull();
   });
 
