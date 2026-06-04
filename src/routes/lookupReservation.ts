@@ -14,15 +14,9 @@ const schema = z
       .optional(),
     name: z.string().optional(),
     args: z.object({
-      confirmation_code: z.string().optional(),
-      phone: z.string().optional(),
-      email: z.string().email().optional(),
+      confirmation_code: z.string().min(1, 'confirmation_code is required'),
     }),
-  })
-  .refine(
-    (d) => d.args.confirmation_code || d.args.phone || d.args.email,
-    'At least one of confirmation_code, phone, or email is required',
-  );
+  });
 
 const router = Router();
 
@@ -43,12 +37,8 @@ router.post('/lookup_reservation', async (req: Request, res: Response) => {
       return;
     }
 
-    const { confirmation_code, phone, email } = parsed.data.args;
-    const result = await lookupReservation({
-      confirmationCode: confirmation_code,
-      phone,
-      email,
-    });
+    const { confirmation_code } = parsed.data.args;
+    const result = await lookupReservation({ confirmationCode: confirmation_code });
 
     log.info(
       { requestId, route: '/lookup_reservation', durationMs: Date.now() - start, outcome: 'ok' },
