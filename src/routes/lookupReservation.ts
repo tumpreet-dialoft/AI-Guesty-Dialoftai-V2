@@ -3,20 +3,11 @@ import { z } from 'zod';
 import { config } from '../config';
 import { log } from '../logger';
 import { lookupReservation } from '../guesty/openApi';
+import { extractArgs } from '../util/extractArgs';
 
-const schema = z
-  .object({
-    call: z
-      .object({
-        call_id: z.string(),
-        from_number: z.string(),
-      })
-      .optional(),
-    name: z.string().optional(),
-    args: z.object({
-      confirmation_code: z.string().min(1, 'confirmation_code is required'),
-    }),
-  });
+const argsSchema = z.object({
+  confirmation_code: z.string().min(1, 'confirmation_code is required'),
+});
 
 const router = Router();
 
@@ -30,14 +21,15 @@ router.post('/lookup_reservation', async (req: Request, res: Response) => {
   const requestId = req.headers['x-request-id'] ?? crypto.randomUUID();
 
   try {
-    const parsed = schema.safeParse(req.body);
+    const raw = extractArgs(req);
+    const parsed = argsSchema.safeParse(raw);
     if (!parsed.success) {
       log.warn({ requestId, errors: parsed.error.issues }, 'validation_failed');
       res.status(400).json({ error: true, message: 'Invalid request body' });
       return;
     }
 
-    const { confirmation_code } = parsed.data.args;
+    const { confirmation_code } = parsed.data;
     const result = await lookupReservation({ confirmationCode: confirmation_code });
 
     log.info(
