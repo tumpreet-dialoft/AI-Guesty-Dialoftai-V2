@@ -5,9 +5,17 @@ import { log } from '../logger';
 import { lookupReservation } from '../guesty/openApi';
 import { extractArgs } from '../util/extractArgs';
 
-const argsSchema = z.object({
-  confirmation_code: z.string().min(1, 'confirmation_code is required'),
-});
+const argsSchema = z
+  .object({
+    confirmation_code: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    guest_name: z.string().optional(),
+  })
+  .refine(
+    (d) => Boolean(d.confirmation_code || d.email || d.phone || d.guest_name),
+    'At least one of confirmation_code, email, phone, or guest_name is required',
+  );
 
 const router = Router();
 
@@ -29,8 +37,13 @@ router.post('/lookup_reservation', async (req: Request, res: Response) => {
       return;
     }
 
-    const { confirmation_code } = parsed.data;
-    const result = await lookupReservation({ confirmationCode: confirmation_code });
+    const { confirmation_code, email, phone, guest_name } = parsed.data;
+    const result = await lookupReservation({
+      confirmationCode: confirmation_code,
+      email,
+      phone,
+      guestName: guest_name,
+    });
 
     log.info(
       { requestId, route: '/lookup_reservation', durationMs: Date.now() - start, outcome: 'ok' },
