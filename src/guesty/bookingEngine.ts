@@ -7,7 +7,6 @@ import {
   AvailabilityResult,
 } from '../shapers/availability';
 import { shapeQuote, ShapedQuote } from '../shapers/quote';
-import { log } from '../logger';
 
 export async function checkAvailability(
   checkIn: string,

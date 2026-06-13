@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 
+// Same base env as setup.ts, but with the Guesty SMS path turned ON so the
+// send_booking_link route delivers through Guesty instead of Twilio.
 process.env.NODE_ENV = 'test';
 process.env.PORT = '0';
 process.env.LOG_LEVEL = 'silent';
@@ -25,7 +27,7 @@ process.env.LISTING_MAP = JSON.stringify({
 });
 process.env.ENABLE_V2_LOOKUP = 'false';
 process.env.ENABLE_V2_POST_CALL = 'false';
-process.env.ENABLE_GUESTY_SMS = 'false';
+process.env.ENABLE_GUESTY_SMS = 'true';
 
 vi.mock('../../src/logger', () => ({
   log: {
