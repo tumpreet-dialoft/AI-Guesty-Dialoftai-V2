@@ -100,13 +100,39 @@ npm run dev
     "check_in_date": "2026-07-04",
     "check_out_date": "2026-07-06",
     "number_of_guests": 2,
-    "phone_number": "+19035551234"
+    "phone_number": "+19035551234",
+    "guest_name": "Jane Doe"
   }
 }
 ```
 
+`guest_name` is optional (defaults to `"Guest"`) and is only used by the Guesty SMS
+path to name a newly created guest/inquiry.
+
 **Response (success):** `{ "sent": true }`
 **Response (failure):** `{ "sent": false }`
+
+#### SMS delivery: Twilio (default) vs Guesty (`ENABLE_GUESTY_SMS`)
+
+By default the booking link is sent via **Twilio** from `TWILIO_FROM`. Set
+`ENABLE_GUESTY_SMS=true` to instead send it **through Guesty** so the message is sent from the
+Guesty-provisioned number and threads into the guest's conversation in the **Guesty Unified
+Inbox** (visible in the dashboard). Requires the Guesty SMS add-on + a provisioned number on the
+account and `GUESTY_OAPI_*` credentials.
+
+How the Guesty path resolves a conversation to send into:
+1. **Existing/returning guest** — find the guest by phone, then their conversation, and send. Fast.
+2. **New prospect** — create a guest (if none) + an `inquiry` reservation so Guesty spawns a
+   conversation, briefly poll for it, then send.
+
+Caveats:
+- A freshly created inquiry's conversation may not be queryable instantly (Guesty advises up to
+  ~60s between reservation mutations). The poll is bounded; if the conversation can't be confirmed
+  the route returns `{ "sent": false }` while the guest + inquiry remain in Guesty for follow-up.
+  This new-prospect path can exceed the ~1.5s response budget — have the agent say
+  "you'll get the text shortly."
+- Each new-prospect send creates an `inquiry` lead (no blocked dates); if the guest later completes
+  the booking via the link, a separate reservation exists. Dedupe by guest in the dashboard.
 
 ## Deployment Notes
 
@@ -135,6 +161,7 @@ Before going live, verify each item:
 - [ ] Deep-link template tested — link opens the right suite, dates, and guest count on the real booking site
 - [ ] Booking Engine instance confirmed to allow self-serve payment on the hosted page (instant booking + connected processor)
 - [ ] Token caching verified for both APIs (Booking Engine + Open API)
+- [x] If `ENABLE_GUESTY_SMS=true`: Guesty SMS path smoke-tested live against the account — guest/inquiry/conversation/`send-message` shapes confirmed; SMS delivered from the Guesty number and threaded in the inbox (re-run end-to-end through the deployed server, where outbound `fetch` works)
 - [ ] 429 backoff + error-fallback confirmed in staging
 - [ ] Retell request auth enforced on every endpoint
 - [ ] All unit + integration tests pass (`npm test`)
