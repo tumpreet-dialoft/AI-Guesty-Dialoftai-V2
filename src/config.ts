@@ -51,6 +51,7 @@ const baseSchema = z.object({
 
   ENABLE_V2_LOOKUP: boolString,
   ENABLE_V2_POST_CALL: boolString,
+  ENABLE_GUESTY_SMS: boolString,
 
   POST_CALL_WEBHOOK_URL: z.string().default(''),
   STAFF_ALERT_WEBHOOK_URL: z.string().default(''),
@@ -86,6 +87,16 @@ function loadConfig() {
       // eslint-disable-next-line no-console
       console.error(
         'ENABLE_V2_POST_CALL is true but GUESTY_OAPI_CLIENT_ID / GUESTY_OAPI_CLIENT_SECRET are missing',
+      );
+      process.exit(1);
+    }
+  }
+
+  if (cfg.ENABLE_GUESTY_SMS) {
+    if (!cfg.GUESTY_OAPI_CLIENT_ID || !cfg.GUESTY_OAPI_CLIENT_SECRET) {
+      // eslint-disable-next-line no-console
+      console.error(
+        'ENABLE_GUESTY_SMS is true but GUESTY_OAPI_CLIENT_ID / GUESTY_OAPI_CLIENT_SECRET are missing',
       );
       process.exit(1);
     }
