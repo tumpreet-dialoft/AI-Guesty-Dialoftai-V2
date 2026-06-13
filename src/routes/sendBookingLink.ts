@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { config } from '../config';
 import { log } from '../logger';
 import { validateDateRange } from '../util/dates';
 import { resolveListingId } from '../listings/map';
 import { buildBookingLink } from '../links/bookingLink';
 import { sendSms } from '../twilio/sms';
+import { sendBookingLinkViaGuesty } from '../guesty/bookingSms';
 import { extractArgs } from '../util/extractArgs';
 
 const E164_RE = /^\+[1-9]\d{1,14}$/;
@@ -15,6 +17,7 @@ const argsSchema = z.object({
   check_out_date: z.string(),
   number_of_guests: z.coerce.number().int().min(1).max(10),
   phone_number: z.string().regex(E164_RE, 'phone_number must be E.164 format'),
+  guest_name: z.string().optional(),
 });
 
 const router = Router();
@@ -32,7 +35,7 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
       return;
     }
 
-    const { suite_name, check_in_date, check_out_date, number_of_guests, phone_number } =
+    const { suite_name, check_in_date, check_out_date, number_of_guests, phone_number, guest_name } =
       parsed.data;
 
     const listingId = resolveListingId(suite_name);
@@ -51,7 +54,21 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
 
     const link = buildBookingLink(suite_name, check_in_date, check_out_date, number_of_guests);
     const body = `The Thomas Hotel: finish your booking & payment here: ${link}`;
-    const sent = await sendSms(phone_number, body);
+
+    // When ENABLE_GUESTY_SMS is on, deliver through Guesty so the message
+    // threads in the Unified Inbox (sent from the Guesty number). Otherwise keep
+    // the original Twilio path unchanged.
+    const sent = config.ENABLE_GUESTY_SMS
+      ? await sendBookingLinkViaGuesty({
+          phone: phone_number,
+          guestName: guest_name?.trim() || 'Guest',
+          listingId,
+          checkIn: check_in_date,
+          checkOut: check_out_date,
+          guests: number_of_guests,
+          body,
+        })
+      : await sendSms(phone_number, body);
 
     log.info(
       {
