@@ -52,6 +52,11 @@ export async function getQuote(
     guestsCount: guests,
   });
 
+  console.log(listingId,typeof(listingId)," listid");
+
+  const payload = { listingId, checkInDateLocalized: checkIn, checkOutDateLocalized: checkOut, guestsCount: guests };
+console.log('📤 Sending to Guesty:', JSON.stringify(payload, null, 2));
+
   return shapeQuote(suiteName, raw);
 }
 
