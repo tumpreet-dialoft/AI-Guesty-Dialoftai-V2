@@ -99,9 +99,25 @@ export async function guestyFetch(
       continue;
     }
 
+    // if (!resp.ok) {
+    //   throw new GuestyError('bad_response', `Unexpected status ${resp.status} on ${path}`);
+    // }
+
     if (!resp.ok) {
-      throw new GuestyError('bad_response', `Unexpected status ${resp.status} on ${path}`);
-    }
+  let errorBody = '';
+  try {
+    errorBody = await resp.text(); // or resp.json() if you prefer
+  } catch (_) {
+    // ignore
+  }
+  // Log the full error response so you can see it in Render logs
+  log.error({ status: resp.status, path, body: errorBody }, 'guesty_bad_response');
+  // Optionally include it in the thrown error for better stack traces
+  throw new GuestyError(
+    'bad_response',
+    `Unexpected status ${resp.status} on ${path}: ${errorBody}`
+  );
+}
 
     log.info({ path, status: resp.status, api, method }, 'guesty_response');
 
