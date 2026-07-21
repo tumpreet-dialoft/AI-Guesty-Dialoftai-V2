@@ -55,6 +55,23 @@ const baseSchema = z.object({
 
   POST_CALL_WEBHOOK_URL: z.string().default(''),
   STAFF_ALERT_WEBHOOK_URL: z.string().default(''),
+
+  // Who a callback actually reaches. Without these, /take_message accepts a
+  // callback request, delivers it to nobody, and the agent has already told the
+  // guest someone is ringing them back.
+  STAFF_PRIMARY_NUMBER: z.string().default(''), // E.164. Andrew.
+  STAFF_BACKUP_NUMBER: z.string().default(''), // E.164. Whoever answers at 2am.
+
+  // n8n. Owns delivery of receipts and the pre-arrival email re-send, because
+  // Guesty exposes no public endpoint for either.
+  RECEIPT_WEBHOOK_URL: z.string().default(''),
+
+  // Guards /retell/inbound, which cannot use x-retell-secret because Retell does
+  // not send that header on the inbound webhook. 32+ random characters.
+  INBOUND_WEBHOOK_TOKEN: z.string().default(''),
+
+  // Retell's post-call webhook signing secret, from the Retell dashboard.
+  RETELL_WEBHOOK_SECRET: z.string().default(''),
 });
 
 function loadConfig() {
@@ -100,6 +117,21 @@ function loadConfig() {
       );
       process.exit(1);
     }
+  }
+
+  if (!cfg.STAFF_PRIMARY_NUMBER && cfg.NODE_ENV === 'production') {
+    // Deliberately a hard crash.
+    //
+    // The alternative is a service that accepts callback requests, delivers them
+    // to nobody, and looks perfectly healthy while it does it. The agent promises
+    // guests a call back. That promise has to land somewhere.
+    // eslint-disable-next-line no-console
+    console.error(
+      'STAFF_PRIMARY_NUMBER is not set. take_message would accept callback requests ' +
+        'and deliver them to nobody while the agent tells guests someone is calling ' +
+        'them back. Refusing to start.',
+    );
+    process.exit(1);
   }
 
   return cfg;

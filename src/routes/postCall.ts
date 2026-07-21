@@ -1,7 +1,45 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { config } from '../config';
 import { log } from '../logger';
+
+// BUG FIX.
+//
+// This route used to sit BELOW `app.use(retellAuth)` in index.ts, which meant it
+// demanded an `x-retell-secret` header.
+//
+// Retell does not send that header on the post-call webhook. That header only exists
+// on CUSTOM FUNCTION calls, because we configured it there ourselves. The post-call
+// webhook is signed with `x-retell-signature`.
+//
+// So this endpoint has returned 401 to every request Retell has ever made to it. It
+// has never run. Which is almost certainly why the agent's webhook_url was still
+// pointed at a public webhook.site bin: the real endpoint rejected Retell, so someone
+// swapped in a URL that would accept anything, and guest names, phone numbers and
+// full call transcripts have been landing in a public inspection bin ever since.
+//
+// It is now mounted ABOVE retellAuth and verifies Retell's signature itself.
+function verifyRetellSignature(req: Request): boolean {
+  // No secret configured: fail open, but say so. Better a logged gap than a silently
+  // dropped webhook that nobody notices for another month.
+  if (!config.RETELL_WEBHOOK_SECRET) {
+    log.warn({}, 'RETELL_WEBHOOK_SECRET not set, post-call webhook is unverified');
+    return true;
+  }
+
+  const provided = req.headers['x-retell-signature'];
+  if (typeof provided !== 'string' || provided.length === 0) return false;
+
+  const expected = crypto
+    .createHmac('sha256', config.RETELL_WEBHOOK_SECRET)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 const schema = z.object({
   call: z.object({
@@ -27,6 +65,12 @@ router.post('/post_call', async (req: Request, res: Response) => {
   }
 
   const requestId = req.headers['x-request-id'] ?? crypto.randomUUID();
+
+  if (!verifyRetellSignature(req)) {
+    log.warn({ requestId }, 'post_call_signature_invalid');
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
 
   try {
     const parsed = schema.safeParse(req.body);
@@ -56,6 +100,17 @@ router.post('/post_call', async (req: Request, res: Response) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(summary),
       }).catch((err) => log.error({ err, requestId }, 'post_call_webhook_failed'));
+    }
+
+    // The old staff alert only fired on a successful booking. That is a sales
+    // notification, not an escalation. Anything the agent PROMISED a human would
+    // follow up on has to reach a human, or the promise was a lie.
+    const analysis = callData.call_analysis ?? {};
+    if (analysis.needs_callback === true || analysis.is_urgent === true) {
+      log.warn(
+        { requestId, callId: callData.call_id, urgent: analysis.is_urgent === true },
+        'post_call_followup_required',
+      );
     }
 
     if (

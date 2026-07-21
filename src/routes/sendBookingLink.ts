@@ -70,6 +70,17 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
         })
       : await sendSms(phone_number, body);
 
+    // BUG FIX. This used to return only { sent: boolean }.
+    //
+    // In the June demo Ava said the link had gone to the number "ending in 9964",
+    // then thirty seconds later said "ending in 9954". She invented both. Handed no
+    // digits, an LLM confabulates rather than staying quiet, and a guest who hears
+    // the wrong four digits assumes the text went to a stranger.
+    //
+    // Give her the digits and the prompt's rule ("read back only what the tool
+    // returned") becomes enforceable instead of aspirational.
+    const last4 = phone_number.replace(/\D/g, '').slice(-4);
+
     log.info(
       {
         requestId,
@@ -80,7 +91,17 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
       'request_complete',
     );
 
-    res.json({ sent });
+    // NOTE: `sent` is true the moment Twilio ACCEPTS the message. That is not the
+    // same as a carrier DELIVERING it. If the number is not A2P 10DLC registered,
+    // US carriers filter these silently, Twilio still returns a SID, and Ava still
+    // says "on its way". Verify the registration; this failure leaves no trace.
+    res.json({
+      sent,
+      sent_to_last4: sent ? last4 : null,
+      message: sent
+        ? `Booking link texted to the number ending ${last4}.`
+        : 'The text could not be sent.',
+    });
   } catch (err) {
     log.error(
       { err, requestId, route: '/send_booking_link', durationMs: Date.now() - start },
