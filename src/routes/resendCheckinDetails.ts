@@ -1,10 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { config } from '../config';
 import { log } from '../logger';
 import { extractArgs } from '../util/extractArgs';
 import { findByConfirmationCode, findByPhone } from '../guesty/reservationSearch';
-import { findConversationByReservationId, sendGuestySms } from '../guesty/communication';
+import { findConversationByReservationId, sendGuestySms, sendGuestyEmail } from '../guesty/communication';
 
 const argsSchema = z
   .object({
@@ -54,9 +53,10 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
     }
 
     let smsSent = false;
+    let emailSent = false;
 
-    // Preferred: thread it into the existing Guesty conversation so it lands in the
-    // Unified Inbox and the team can see exactly what the guest was told.
+    // Thread both messages into the existing Guesty conversation so everything
+    // lands in the Unified Inbox and the team can see exactly what the guest was told.
     const conversationId = await findConversationByReservationId(reservation.reservation_id);
     if (conversationId) {
       smsSent = await sendGuestySms(
@@ -65,30 +65,23 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
           `Your door code and check-in instructions are in your email. ` +
           `Any trouble at all, call us on 903-426-8958.`,
       );
-    }
 
-    // Guesty has no public endpoint to re-fire the pre-arrival email, so n8n owns it.
-    let emailSent = false;
-    if (config.RECEIPT_WEBHOOK_URL) {
-      try {
-        const webhookRes = await fetch(config.RECEIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'checkin_details',
-            reservation_id: reservation.reservation_id,
-            confirmation_code: reservation.confirmation_code,
-            guest_name: reservation.guest_full_name,
-            suite: reservation.suite,
-            check_in: reservation.check_in,
-          }),
-        });
-        emailSent = webhookRes.ok;
-      } catch (err) {
-        log.error({ err, requestId }, 'checkin_resend_webhook_failed');
-      }
-    } else {
-      log.error({ requestId }, 'RECEIPT_WEBHOOK_URL not set, checkin details email not sent');
+      const emailBody =
+        `Hello ${reservation.guest_full_name},\n\n` +
+        `Here are your booking details for The Thomas Hotel:\n\n` +
+        `Confirmation Code: ${reservation.confirmation_code}\n` +
+        `Suite: ${reservation.suite}\n` +
+        `Arrival: ${reservation.check_in}\n` +
+        `Departure: ${reservation.check_out}\n` +
+        `Check-In Time: 3:00 PM\n\n` +
+        `Hotel Address:\n109 E Erwin St.\nTyler, TX 75702\n\n` +
+        `Need anything? Call us at 903-426-8958.\n\nThe Thomas Hotel Team`;
+
+      emailSent = await sendGuestyEmail(
+        conversationId,
+        'Your booking details — The Thomas Hotel',
+        emailBody,
+      );
     }
 
     log.info(
