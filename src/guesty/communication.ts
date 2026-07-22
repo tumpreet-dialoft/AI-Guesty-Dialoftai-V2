@@ -10,6 +10,9 @@ const CONVERSATIONS_PATH = '/communication/conversations';
 // Guesty sends from the account's provisioned SMS number, so the message threads
 // in the dashboard.
 const SMS_MODULE = { type: 'sms' };
+// ponytail: email module format mirrors SMS — unverified against live account.
+// If Guesty rejects it, guesty_email_send_failed will appear in logs.
+const EMAIL_MODULE = { type: 'email' };
 
 // Conversation list responses are wrapped: { status, data: { conversations } }.
 interface ConversationSearchResponse {
@@ -55,6 +58,26 @@ export async function sendGuestySms(conversationId: string, body: string): Promi
     return true;
   } catch (err) {
     log.error({ err, conversationId }, 'guesty_sms_send_failed');
+    return false;
+  }
+}
+
+export async function sendGuestyEmail(
+  conversationId: string,
+  subject: string,
+  body: string,
+): Promise<boolean> {
+  try {
+    await guestyFetch(
+      'open_api',
+      'POST',
+      `${CONVERSATIONS_PATH}/${encodeURIComponent(conversationId)}/send-message`,
+      { module: EMAIL_MODULE, subject, body },
+    );
+    log.info({ conversationId }, 'guesty_email_sent');
+    return true;
+  } catch (err) {
+    log.error({ err, conversationId }, 'guesty_email_send_failed');
     return false;
   }
 }
