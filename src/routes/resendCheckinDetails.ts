@@ -61,8 +61,8 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
     if (conversationId) {
       smsSent = await sendGuestySms(
         conversationId,
-        `The Thomas Hotel: re-sending your arrival details for ${reservation.check_in}. ` +
-          `Your door code and check-in instructions are in your email. ` +
+        `The Thomas Hotel: here are your arrival details for ${reservation.check_in}. ` +
+          `Confirmation: ${reservation.confirmation_code}, Suite: ${reservation.suite}. ` +
           `Any trouble at all, call us on 903-426-8958.`,
       );
     }
