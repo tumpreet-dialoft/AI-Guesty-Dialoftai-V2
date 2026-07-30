@@ -39,7 +39,10 @@ router.post('/get_quote', async (req: Request, res: Response) => {
 
     const dateCheck = validateDateRange(check_in_date, check_out_date);
     if (!dateCheck.ok) {
-      log.warn({ requestId, reason: dateCheck.reason }, 'date_validation_failed');
+      log.warn(
+        { requestId, reason: dateCheck.reason, check_in_date, check_out_date },
+        'date_validation_failed',
+      );
       res.json({ error: true, invalid_dates: true, message: dateCheck.guestMessage });
       return;
     }
