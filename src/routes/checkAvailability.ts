@@ -30,7 +30,12 @@ router.post('/check_availability', async (req: Request, res: Response) => {
 
     const dateCheck = validateDateRange(check_in_date, check_out_date);
     if (!dateCheck.ok) {
-      log.warn({ requestId, reason: dateCheck.reason }, 'date_validation_failed');
+      // Log the dates themselves: knowing it was rejected is useless without knowing
+      // which year the agent actually resolved to.
+      log.warn(
+        { requestId, reason: dateCheck.reason, check_in_date, check_out_date },
+        'date_validation_failed',
+      );
       // Distinct from the `{ error: true }` below: the dates are wrong, the system is
       // fine. Ava should correct the caller, not transfer them.
       res.json({ error: true, invalid_dates: true, message: dateCheck.guestMessage });

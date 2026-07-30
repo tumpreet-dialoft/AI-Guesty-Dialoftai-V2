@@ -60,7 +60,10 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
 
     const dateCheck = validateDateRange(check_in_date, check_out_date);
     if (!dateCheck.ok) {
-      log.warn({ requestId, reason: dateCheck.reason }, 'date_validation_failed');
+      log.warn(
+        { requestId, reason: dateCheck.reason, check_in_date, check_out_date },
+        'date_validation_failed',
+      );
       res.json({ sent: false, invalid_dates: true, message: dateCheck.guestMessage });
       return;
     }
