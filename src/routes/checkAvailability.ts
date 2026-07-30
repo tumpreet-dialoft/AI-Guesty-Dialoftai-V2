@@ -31,7 +31,9 @@ router.post('/check_availability', async (req: Request, res: Response) => {
     const dateCheck = validateDateRange(check_in_date, check_out_date);
     if (!dateCheck.ok) {
       log.warn({ requestId, reason: dateCheck.reason }, 'date_validation_failed');
-      res.json({ error: true });
+      // Distinct from the `{ error: true }` below: the dates are wrong, the system is
+      // fine. Ava should correct the caller, not transfer them.
+      res.json({ error: true, invalid_dates: true, message: dateCheck.guestMessage });
       return;
     }
 
@@ -48,7 +50,13 @@ router.post('/check_availability', async (req: Request, res: Response) => {
       { err, requestId, route: '/check_availability', durationMs: Date.now() - start },
       'handler_failed',
     );
-    res.json({ error: true });
+    // `retryable` so the prompt can walk its failure ladder instead of jumping
+    // straight to a transfer. The dates were fine; Guesty was briefly not.
+    res.json({
+      error: true,
+      retryable: true,
+      message: 'The booking system did not answer. Try again in a moment.',
+    });
   }
 });
 

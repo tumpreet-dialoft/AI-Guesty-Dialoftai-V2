@@ -1,9 +1,70 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { config } from '../config';
 import { log } from '../logger';
 import { extractArgs } from '../util/extractArgs';
 import { findByConfirmationCode, findByPhone } from '../guesty/reservationSearch';
+import { findConversationByReservationId, sendGuestyEmail } from '../guesty/communication';
+import { guestyFetch } from '../guesty/client';
+
+/**
+ * A receipt without figures is not a receipt. `findByConfirmationCode` deliberately
+ * fetches a thin projection, so pull the `money` block separately for this one route.
+ */
+interface Money {
+  currency?: string;
+  fareAccommodation?: number;
+  fareCleaning?: number;
+  totalTaxes?: number;
+  hostPayout?: number;
+  totalPaid?: number;
+  balanceDue?: number;
+}
+
+async function fetchMoney(reservationId: string): Promise<Money | null> {
+  try {
+    const raw = (await guestyFetch(
+      'open_api',
+      'GET',
+      `/reservations/${reservationId}?fields=${encodeURIComponent('money')}`,
+    )) as { result?: { money?: Money }; money?: Money } | null;
+    return raw?.result?.money ?? raw?.money ?? null;
+  } catch (err) {
+    log.warn({ err, reservationId }, 'receipt_money_fetch_failed');
+    return null;
+  }
+}
+
+// Guesty returns major units already, so no cents conversion. Missing figures are
+// omitted rather than printed as 0.00 — a wrong number on a receipt is worse than
+// an absent one.
+function line(label: string, amount: number | undefined, currency: string): string | null {
+  if (typeof amount !== 'number') return null;
+  return `${label}: ${currency} ${amount.toFixed(2)}`;
+}
+
+// "Receipt" is a claim that money changed hands. When nothing has been paid it is
+// a statement, and calling it a receipt tells a guest they have settled a bill they
+// still owe.
+function heading(money: Money | null): string {
+  return money && typeof money.totalPaid === 'number' && money.totalPaid > 0
+    ? 'Your receipt'
+    : 'Your booking statement';
+}
+
+function moneyLines(money: Money | null): string {
+  if (!money) return '';
+  const cur = money.currency ?? 'USD';
+  const rows = [
+    line('Accommodation', money.fareAccommodation, cur),
+    line('Cleaning fee', money.fareCleaning, cur),
+    line('Taxes', money.totalTaxes, cur),
+    line('Total', money.hostPayout, cur),
+    line('Paid', money.totalPaid, cur),
+    line('Balance due', money.balanceDue, cur),
+  ].filter((r): r is string => r !== null);
+
+  return rows.length > 0 ? `\n${rows.join('\n')}\n` : '';
+}
 
 const argsSchema = z
   .object({
@@ -62,28 +123,35 @@ router.post('/send_receipt', async (req: Request, res: Response) => {
       );
     }
 
-    if (!config.RECEIPT_WEBHOOK_URL) {
-      log.error({ requestId }, 'RECEIPT_WEBHOOK_URL not set, receipt cannot be delivered');
-      res.json({ ok: false, message: 'Receipt system unavailable.' });
+    const conversationId = await findConversationByReservationId(reservation.reservation_id);
+    if (!conversationId) {
+      log.error({ requestId, reservationId: reservation.reservation_id }, 'no_conversation_found');
+      res.json({ ok: false, message: 'Could not send the receipt.' });
       return;
     }
 
-    await fetch(config.RECEIPT_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'receipt',
-        reservation_id: reservation.reservation_id,
-        confirmation_code: reservation.confirmation_code,
-        guest_name: reservation.guest_full_name,
-        suite: reservation.suite,
-        check_in: reservation.check_in,
-        check_out: reservation.check_out,
-        email_override: email_override ?? null,
-      }),
-    });
+    const money = await fetchMoney(reservation.reservation_id);
 
-    log.info({ requestId, reservationId: reservation.reservation_id }, 'receipt_queued');
+    const sent = await sendGuestyEmail(
+      conversationId,
+      `${heading(money)} — The Thomas Hotel\n\n` +
+        `Hello ${reservation.guest_full_name},\n\n` +
+        `Here are the details for your stay:\n\n` +
+        `Confirmation: ${reservation.confirmation_code}\n` +
+        `Suite: ${reservation.suite}\n` +
+        `Check-in: ${reservation.check_in}\n` +
+        `Check-out: ${reservation.check_out}\n` +
+        moneyLines(money) +
+        `\nQuestions about the charges? Call us on 903-426-8958.\n\n` +
+        `The Thomas Hotel`,
+    );
+
+    if (!sent) {
+      res.json({ ok: false, message: 'Could not send the receipt.' });
+      return;
+    }
+
+    log.info({ requestId, reservationId: reservation.reservation_id }, 'receipt_sent');
 
     // Never return the address itself. If it is not in the agent's context, the agent
     // cannot read it out loud.

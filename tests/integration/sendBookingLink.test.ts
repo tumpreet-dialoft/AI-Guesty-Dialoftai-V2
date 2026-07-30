@@ -46,7 +46,11 @@ describe('POST /send_booking_link', () => {
     expect(callArgs.body).toContain('lst_garden_004');
   });
 
-  it('bad E.164 phone returns 400', async () => {
+  // The agent transcribes a spoken number, so a dashed US number is the normal
+  // case, not a bad request. It used to 400 here and fail the call.
+  it('normalises a dashed US number and sends it', async () => {
+    mockCreate.mockResolvedValue({ sid: 'SM_test_124' });
+
     const res = await request(app)
       .post('/send_booking_link')
       .set('x-retell-secret', SECRET)
@@ -58,8 +62,30 @@ describe('POST /send_booking_link', () => {
         phone_number: '903-555-1234',
       });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.sent).toBe(true);
+
+    const callArgs = mockCreate.mock.calls[0][0] as { to: string };
+    expect(callArgs.to).toBe('+19035551234');
+  });
+
+  it('unparseable phone returns 200 with invalid_phone, never a non-200', async () => {
+    const res = await request(app)
+      .post('/send_booking_link')
+      .set('x-retell-secret', SECRET)
+      .send({
+        suite_name: 'Garden Suite',
+        check_in_date: '2099-07-04',
+        check_out_date: '2099-07-06',
+        number_of_guests: '2',
+        phone_number: '12345',
+      });
+
+    // 200 on purpose: Retell treats a non-200 as a dead tool.
+    expect(res.status).toBe(200);
     expect(res.body.sent).toBe(false);
+    expect(res.body.invalid_phone).toBe(true);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it('Twilio failure returns sent: false', async () => {

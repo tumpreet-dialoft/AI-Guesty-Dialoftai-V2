@@ -8,15 +8,16 @@ import { buildBookingLink } from '../links/bookingLink';
 import { sendSms } from '../twilio/sms';
 import { sendBookingLinkViaGuesty } from '../guesty/bookingSms';
 import { extractArgs } from '../util/extractArgs';
-
-const E164_RE = /^\+[1-9]\d{1,14}$/;
+import { normalizePhone } from '../util/phone';
 
 const argsSchema = z.object({
   suite_name: z.string(),
   check_in_date: z.string(),
   check_out_date: z.string(),
   number_of_guests: z.coerce.number().int().min(1).max(10),
-  phone_number: z.string().regex(E164_RE, 'phone_number must be E.164 format'),
+  // Normalised rather than pattern-matched: the agent is transcribing speech, and a
+  // strict E.164 rule here just fails the call over a missing plus sign.
+  phone_number: z.string().min(1),
   guest_name: z.string().optional(),
 });
 
@@ -31,12 +32,24 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
     const parsed = argsSchema.safeParse(raw);
     if (!parsed.success) {
       log.warn({ requestId, errors: parsed.error.issues }, 'validation_failed');
-      res.status(400).json({ sent: false, message: 'Invalid request body' });
+      // 200: Retell treats a non-200 as a dead tool and the agent stops reasoning
+      // about the result. See the error handler in index.ts.
+      res.json({ sent: false, message: 'Invalid request body' });
       return;
     }
 
-    const { suite_name, check_in_date, check_out_date, number_of_guests, phone_number, guest_name } =
-      parsed.data;
+    const { suite_name, check_in_date, check_out_date, number_of_guests, guest_name } = parsed.data;
+
+    const phone_number = normalizePhone(parsed.data.phone_number);
+    if (!phone_number) {
+      log.warn({ requestId }, 'phone_normalisation_failed');
+      res.json({
+        sent: false,
+        invalid_phone: true,
+        message: 'That does not look like a complete phone number. Ask for it again.',
+      });
+      return;
+    }
 
     const listingId = resolveListingId(suite_name);
     if (!listingId) {
@@ -48,7 +61,7 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
     const dateCheck = validateDateRange(check_in_date, check_out_date);
     if (!dateCheck.ok) {
       log.warn({ requestId, reason: dateCheck.reason }, 'date_validation_failed');
-      res.json({ sent: false });
+      res.json({ sent: false, invalid_dates: true, message: dateCheck.guestMessage });
       return;
     }
 
