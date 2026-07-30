@@ -26,5 +26,9 @@ export function normalizePhone(input: string): string | null {
   // and it is wrong for an international number typed without a +.
   if (digits.length === 10) return `+${DEFAULT_COUNTRY_CODE}${digits}`;
 
+  // Too long to be a US number, so it is an international one that lost its plus
+  // somewhere between the caller saying it and the agent writing it down.
+  if (digits.length >= 11 && digits.length <= 15 && digits[0] !== '0') return `+${digits}`;
+
   return null;
 }

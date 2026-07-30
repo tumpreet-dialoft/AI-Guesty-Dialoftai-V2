@@ -14,11 +14,19 @@ describe('normalizePhone', () => {
     expect(normalizePhone('19034268958')).toBe('+19034268958');
   });
 
+  // The agent transcribes speech and drops the plus. Too long to be US, so the
+  // only sensible reading is an international number missing its prefix.
+  it('restores the plus on a long number that lost it', () => {
+    expect(normalizePhone('917986610238')).toBe('+917986610238');
+    expect(normalizePhone('44 7700 900123')).toBe('+447700900123');
+  });
+
   it('rejects anything it cannot be sure about', () => {
     expect(normalizePhone('')).toBeNull();
     expect(normalizePhone('12345')).toBeNull(); // too short to guess at
     expect(normalizePhone('798661023')).toBeNull(); // 9 digits, not a US number
     expect(normalizePhone('+0123456789')).toBeNull(); // no country code starts with 0
+    expect(normalizePhone('9179866102381234')).toBeNull(); // 16 digits, beyond E.164
   });
 
   // The one assumption in here. A 10-digit international number typed without a

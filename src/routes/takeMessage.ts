@@ -3,12 +3,18 @@ import { z } from 'zod';
 import { log } from '../logger';
 import { extractArgs } from '../util/extractArgs';
 import { raiseStaffAlert } from '../alerts/staffAlert';
+import { normalizePhone } from '../util/phone';
 
-const E164_RE = /^\+[1-9]\d{1,14}$/;
-
+// Deliberately looser than send_booking_link. This number is never dialled: it goes
+// into the body of a staff SMS and is read aloud on the voice alert. Rejecting a
+// message because the agent dropped a plus sign strands a guest who has already been
+// told someone will ring them back, which is the one outcome this route exists to
+// prevent. Take anything with enough digits to be a phone number.
 const argsSchema = z.object({
   caller_name: z.string().min(1),
-  callback_number: z.string().regex(E164_RE, 'callback_number must be E.164'),
+  callback_number: z.string().refine((s) => s.replace(/\D/g, '').length >= 7, {
+    message: 'callback_number needs at least 7 digits',
+  }),
   reason: z.string().min(1),
   details: z.string().default(''),
   priority: z.enum(['urgent', 'high', 'normal']).default('normal'),
@@ -43,7 +49,12 @@ router.post('/take_message', async (req: Request, res: Response) => {
       return;
     }
 
-    const { notified } = await raiseStaffAlert(parsed.data);
+    // Tidy it into E.164 when that is unambiguous, otherwise pass on exactly what the
+    // caller said. Staff can read a messy number; they cannot read one we dropped.
+    const { notified } = await raiseStaffAlert({
+      ...parsed.data,
+      callback_number: normalizePhone(parsed.data.callback_number) ?? parsed.data.callback_number,
+    });
 
     log.info(
       {
