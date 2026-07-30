@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { GuestyError } from '../errors';
 import { log } from '../logger';
@@ -14,15 +15,24 @@ interface CachedToken {
 interface TokenCacheEntry {
   cached: CachedToken | null;
   inflight: Promise<CachedToken> | null;
+  blockedUntil: number;
 }
 
 const PROACTIVE_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
-const TOKEN_FILE = path.join('/tmp', 'guesty-tokens.json');
+// Guesty rate-limits /oauth2/token hard, and a 429 there is not something a retry
+// fixes — each further attempt extends the block. Refuse to call the endpoint at all
+// for a while after it fails, so a burst of traffic cannot dig the hole deeper.
+const TOKEN_FAILURE_COOLDOWN_MS = 60 * 1000;
+
+// os.tmpdir() so this survives restarts on Windows too. A hardcoded '/tmp' resolves
+// to <drive>:\tmp there, which does not exist, so every save failed silently and every
+// dev-server restart burned a fresh token off Guesty's rate-limited token endpoint.
+const TOKEN_FILE = path.join(os.tmpdir(), 'guesty-tokens.json');
 
 const caches: Record<ApiType, TokenCacheEntry> = {
-  booking_engine: { cached: null, inflight: null },
-  open_api: { cached: null, inflight: null },
+  booking_engine: { cached: null, inflight: null, blockedUntil: 0 },
+  open_api: { cached: null, inflight: null, blockedUntil: 0 },
 };
 
 function loadFromDisk(): void {
@@ -38,8 +48,8 @@ function loadFromDisk(): void {
         log.info({ api }, 'token_loaded_from_disk');
       }
     }
-  } catch {
-    log.warn('token_disk_load_failed');
+  } catch (err) {
+    log.warn({ err, file: TOKEN_FILE }, 'token_disk_load_failed');
   }
 }
 
@@ -50,8 +60,8 @@ function saveToDisk(): void {
       data[api] = caches[api].cached;
     }
     fs.writeFileSync(TOKEN_FILE, JSON.stringify(data), 'utf8');
-  } catch {
-    log.warn('token_disk_save_failed');
+  } catch (err) {
+    log.warn({ err, file: TOKEN_FILE }, 'token_disk_save_failed');
   }
 }
 
@@ -124,6 +134,14 @@ export async function getToken(api: ApiType): Promise<string> {
     return result.accessToken;
   }
 
+  if (Date.now() < entry.blockedUntil) {
+    const waitSec = Math.ceil((entry.blockedUntil - Date.now()) / 1000);
+    throw new GuestyError(
+      'token_fetch_failed',
+      `Token endpoint cooling down for ${waitSec}s after a failure`,
+    );
+  }
+
   const cfg = getTokenEndpointConfig(api);
   const promise = fetchToken(cfg);
   entry.inflight = promise;
@@ -136,6 +154,7 @@ export async function getToken(api: ApiType): Promise<string> {
     return result.accessToken;
   } catch (err) {
     entry.cached = null;
+    entry.blockedUntil = Date.now() + TOKEN_FAILURE_COOLDOWN_MS;
     throw err;
   } finally {
     entry.inflight = null;
@@ -151,5 +170,6 @@ export function _resetForTest(): void {
   for (const key of Object.keys(caches) as ApiType[]) {
     caches[key].cached = null;
     caches[key].inflight = null;
+    caches[key].blockedUntil = 0;
   }
 }

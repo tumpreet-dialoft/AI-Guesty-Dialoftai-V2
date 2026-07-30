@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { config } from '../config';
 import { log } from '../logger';
 import { extractArgs } from '../util/extractArgs';
 import { findByConfirmationCode, findByPhone } from '../guesty/reservationSearch';
-import { findConversationByReservationId, sendGuestySms } from '../guesty/communication';
+import {
+  findConversationByReservationId,
+  sendGuestySms,
+  sendGuestyEmail,
+} from '../guesty/communication';
 
 const argsSchema = z
   .object({
@@ -54,8 +57,9 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
     }
 
     let smsSent = false;
+    let emailSent = false;
 
-    // Preferred: thread it into the existing Guesty conversation so it lands in the
+    // Both channels thread into the existing Guesty conversation so they land in the
     // Unified Inbox and the team can see exactly what the guest was told.
     const conversationId = await findConversationByReservationId(reservation.reservation_id);
     if (conversationId) {
@@ -65,30 +69,20 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
           `Confirmation: ${reservation.confirmation_code}, Suite: ${reservation.suite}. ` +
           `Any trouble at all, call us on 903-426-8958.`,
       );
-    }
 
-    // Guesty has no public endpoint to re-fire the pre-arrival email, so n8n owns it.
-    let emailSent = false;
-    if (config.RECEIPT_WEBHOOK_URL) {
-      try {
-        const webhookRes = await fetch(config.RECEIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'checkin_details',
-            reservation_id: reservation.reservation_id,
-            confirmation_code: reservation.confirmation_code,
-            guest_name: reservation.guest_full_name,
-            suite: reservation.suite,
-            check_in: reservation.check_in,
-          }),
-        });
-        emailSent = webhookRes.ok;
-      } catch (err) {
-        log.error({ err, requestId }, 'checkin_resend_webhook_failed');
-      }
+      emailSent = await sendGuestyEmail(
+        conversationId,
+        `Your arrival details — The Thomas Hotel\n\n` +
+          `Hello ${reservation.guest_full_name},\n\n` +
+          `Here are your arrival details:\n\n` +
+          `Confirmation: ${reservation.confirmation_code}\n` +
+          `Suite: ${reservation.suite}\n` +
+          `Check-in: ${reservation.check_in}\n\n` +
+          `Any trouble at all, call us on 903-426-8958.\n\n` +
+          `The Thomas Hotel`,
+      );
     } else {
-      log.error({ requestId }, 'RECEIPT_WEBHOOK_URL not set, checkin details email not sent');
+      log.warn({ requestId, reservationId: reservation.reservation_id }, 'no_conversation_found');
     }
 
     log.info(

@@ -11,6 +11,10 @@ const CONVERSATIONS_PATH = '/communication/conversations';
 // in the dashboard.
 const SMS_MODULE = { type: 'sms' };
 
+// Same shape, different channel. Guesty rejects a `subject` field on this endpoint
+// (VALIDATION_ERROR), so the first line of `body` is all the subject we get.
+const EMAIL_MODULE = { type: 'email' };
+
 // Conversation list responses are wrapped: { status, data: { conversations } }.
 interface ConversationSearchResponse {
   data?: {
@@ -41,20 +45,32 @@ export async function findConversationByReservationId(
   return searchConversationId('reservation._id', reservationId);
 }
 
-// Sends an SMS into an existing conversation via the Unified Inbox. Mirrors the
-// boolean contract of src/twilio/sms.ts so callers stay uniform.
-export async function sendGuestySms(conversationId: string, body: string): Promise<boolean> {
+// Sends into an existing conversation via the Unified Inbox. Mirrors the boolean
+// contract of src/twilio/sms.ts so callers stay uniform.
+async function send(
+  conversationId: string,
+  module: { type: string },
+  body: string,
+): Promise<boolean> {
   try {
     await guestyFetch(
       'open_api',
       'POST',
       `${CONVERSATIONS_PATH}/${encodeURIComponent(conversationId)}/send-message`,
-      { module: SMS_MODULE, body },
+      { module, body },
     );
-    log.info({ conversationId }, 'guesty_sms_sent');
+    log.info({ conversationId, channel: module.type }, 'guesty_message_sent');
     return true;
   } catch (err) {
-    log.error({ err, conversationId }, 'guesty_sms_send_failed');
+    log.error({ err, conversationId, channel: module.type }, 'guesty_message_send_failed');
     return false;
   }
+}
+
+export async function sendGuestySms(conversationId: string, body: string): Promise<boolean> {
+  return send(conversationId, SMS_MODULE, body);
+}
+
+export async function sendGuestyEmail(conversationId: string, body: string): Promise<boolean> {
+  return send(conversationId, EMAIL_MODULE, body);
 }

@@ -40,7 +40,7 @@ router.post('/get_quote', async (req: Request, res: Response) => {
     const dateCheck = validateDateRange(check_in_date, check_out_date);
     if (!dateCheck.ok) {
       log.warn({ requestId, reason: dateCheck.reason }, 'date_validation_failed');
-      res.json({ error: true });
+      res.json({ error: true, invalid_dates: true, message: dateCheck.guestMessage });
       return;
     }
 
@@ -63,7 +63,11 @@ router.post('/get_quote', async (req: Request, res: Response) => {
       { err, requestId, route: '/get_quote', durationMs: Date.now() - start },
       'handler_failed',
     );
-    res.json({ error: true });
+    res.json({
+      error: true,
+      retryable: true,
+      message: 'The booking system did not answer. Try again in a moment.',
+    });
   }
 });
 
