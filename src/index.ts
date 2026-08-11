@@ -12,6 +12,7 @@ import { sendReceiptRouter } from './routes/sendReceipt';
 import { resendCheckinDetailsRouter } from './routes/resendCheckinDetails';
 import { inboundLookupRouter } from './routes/inboundLookup';
 import { postCallRouter } from './routes/postCall';
+import https from 'https';
 
 const app = express();
 
@@ -58,6 +59,22 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 if (process.env.NODE_ENV !== 'test') {
   app.listen(config.PORT, () => {
     log.info({ port: config.PORT, env: config.NODE_ENV }, 'server_started');
+    const RENDER_APP_URL = process.env.RENDER_EXTERNAL_URL || 'https://your-backend-name.onrender.com';
+    const PING_URL = `${RENDER_APP_URL}/health`; // adjust path if your health route is just '/'
+
+    const keepAlive = () => {
+      https.get(PING_URL, (res) => {
+        if (res.statusCode === 200) {
+          log.info('Self-ping successful: Server kept awake.');
+        } else {
+          log.error({ statusCode: res.statusCode }, 'Self-ping failed');
+        }
+      }).on('error', (err) => {
+        log.error({ err: err.message }, 'Self-ping error');
+      });
+    };
+
+    setInterval(keepAlive, 840000); // 14 minutes
   });
 }
 
