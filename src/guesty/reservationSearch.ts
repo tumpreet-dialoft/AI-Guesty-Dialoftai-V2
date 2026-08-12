@@ -136,35 +136,78 @@ function preferCurrentStay(all: ReservationSummary[]): ReservationSummary | null
 }
 
 /** Caller ID lookup. Guesty stores phones as digits, so `+1903...` matches nothing. */
+// export async function findByPhone(phone: string): Promise<ReservationSummary | null> {
+//   const digits = phone.replace(/\D/g, '');
+//   if (!digits) return null;
+
+//   const data = (await guestyFetch(
+//     'open_api',
+//     'GET',
+//     `${RESERVATIONS_PATH}?q=${encodeURIComponent(digits)}` +
+//       `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=10&sort=-checkInDateLocalized`,
+//   )) as { results?: unknown[] } | null;
+
+//   const all = (data?.results ?? []).map(shape).filter((r): r is ReservationSummary => r !== null);
+
+//   // BUG FIX. The old code sorted by `-createdAt` and took the first hit, which is
+//   // the reservation most recently CREATED, not the one the guest is calling about.
+//   // A guest who booked their August stay back in January, calling from their July
+//   // stay, was being read their August dates.
+//   return preferCurrentStay(all);
+// }
+
+/** Caller ID lookup. Guesty stores phones as digits, so `+1903...` matches nothing. */
 export async function findByPhone(phone: string): Promise<ReservationSummary | null> {
   const digits = phone.replace(/\D/g, '');
   if (!digits) return null;
 
+  // Use Guesty's native filters array
+  const filters = JSON.stringify([
+    { field: 'guest.phone', operator: '$contains', value: digits }
+  ]);
+
   const data = (await guestyFetch(
     'open_api',
     'GET',
-    `${RESERVATIONS_PATH}?q=${encodeURIComponent(digits)}` +
+    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
       `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=10&sort=-checkInDateLocalized`,
   )) as { results?: unknown[] } | null;
 
   const all = (data?.results ?? []).map(shape).filter((r): r is ReservationSummary => r !== null);
 
-  // BUG FIX. The old code sorted by `-createdAt` and took the first hit, which is
-  // the reservation most recently CREATED, not the one the guest is calling about.
-  // A guest who booked their August stay back in January, calling from their July
-  // stay, was being read their August dates.
   return preferCurrentStay(all);
 }
+
+/** Email lookup, same stay-preference ordering as findByPhone. */
+// export async function findByEmail(email: string): Promise<ReservationSummary | null> {
+//   const trimmed = email.trim();
+//   if (!trimmed) return null;
+
+//   const data = (await guestyFetch(
+//     'open_api',
+//     'GET',
+//     `${RESERVATIONS_PATH}?q=${encodeURIComponent(trimmed)}` +
+//       `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=10&sort=-checkInDateLocalized`,
+//   )) as { results?: unknown[] } | null;
+
+//   const all = (data?.results ?? []).map(shape).filter((r): r is ReservationSummary => r !== null);
+//   return preferCurrentStay(all);
+// }
 
 /** Email lookup, same stay-preference ordering as findByPhone. */
 export async function findByEmail(email: string): Promise<ReservationSummary | null> {
   const trimmed = email.trim();
   if (!trimmed) return null;
 
+  // Use Guesty's native filters array
+  const filters = JSON.stringify([
+    { field: 'guest.email', operator: '$eq', value: trimmed }
+  ]);
+
   const data = (await guestyFetch(
     'open_api',
     'GET',
-    `${RESERVATIONS_PATH}?q=${encodeURIComponent(trimmed)}` +
+    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
       `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=10&sort=-checkInDateLocalized`,
   )) as { results?: unknown[] } | null;
 
