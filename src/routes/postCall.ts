@@ -94,11 +94,23 @@ router.post('/post_call', async (req: Request, res: Response) => {
     };
 
     // Fire-and-forget: forward to webhooks
+   // Construct a rich payload for Make.com to parse
+    const makePayload = {
+      call_id: callData.call_id,
+      from_number: callData.from_number ?? 'unknown',
+      duration_seconds: callData.duration_ms ? Math.round(callData.duration_ms / 1000) : 0,
+      recording_url: callData.recording_url ?? null,
+      transcript: callData.transcript ?? 'No transcript generated.',
+      // This sends all post-call analysis blocks (call_summary, user_sentiment, call_successful)
+      call_analysis: callData.call_analysis ?? {}
+    };
+
+    // Fire-and-forget: forward to the rich webhook (Make.com)
     if (config.POST_CALL_WEBHOOK_URL) {
       fetch(config.POST_CALL_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(summary),
+        body: JSON.stringify(makePayload), // Sending the rich dataset
       }).catch((err) => log.error({ err, requestId }, 'post_call_webhook_failed'));
     }
 
