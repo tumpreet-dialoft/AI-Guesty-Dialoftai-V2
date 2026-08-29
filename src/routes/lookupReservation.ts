@@ -53,13 +53,28 @@ router.post('/lookup_reservation', async (req: Request, res: Response) => {
     //   2. caller ID          - silent, zero friction, covers most direct bookings
     //   3. email              - covers callers who only have their booking email
     //   4. name + dates       - fuzzy, covers OTA guests and anyone on a borrowed phone
+    // let found = confirmation_code ? await findByConfirmationCode(confirmation_code) : null;
+
+    // if (!found && phone) {
+    //   found = await findByPhone(phone);
+    // }
+
+    // if (!found && email) {
+    //   found = await findByEmail(email);
+    // }
+
+    // if (!found && guest_name) {
+    //   const matches = await findByNameAndDate(guest_name, check_in_date);
+
     let found = confirmation_code ? await findByConfirmationCode(confirmation_code) : null;
 
-    if (!found && phone) {
+    const isTargetingSpecificPastStay = Boolean(check_in_date && guest_name);
+
+    if (!found && phone && !isTargetingSpecificPastStay) {
       found = await findByPhone(phone);
     }
 
-    if (!found && email) {
+    if (!found && email && !isTargetingSpecificPastStay) {
       found = await findByEmail(email);
     }
 
