@@ -272,25 +272,59 @@ export async function findByConfirmationCode(code: string): Promise<ReservationS
   const normalized = normalizeCode(code);
   if (!normalized) return null;
 
-  const candidates = codeCandidates(normalized);
+  // Fully format-agnostic: normalizeCode strips case AND every separator on both sides,
+  // so we never reconstruct Guesty's punctuation. We only need to fetch candidates.
+  const verify = (rows: unknown[] = []): ReservationSummary | null =>
+    rows
+      .map(shape)
+      .filter((r): r is ReservationSummary => r !== null)
+      .find((r) => r.confirmation_code && normalizeCode(r.confirmation_code) === normalized) ?? null;
 
-  const filters = JSON.stringify([
-    { operator: '$in', field: 'confirmationCode', value: candidates },
-  ]);
-  const data = (await guestyFetch(
-    'open_api',
-    'GET',
-    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
-      `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=5`,
-  )) as { results?: unknown[] } | null;
+  const byFilter = async (filter: object, limit: number): Promise<unknown[]> => {
+    const filters = JSON.stringify([filter]);
+    const data = (await guestyFetch(
+      'open_api',
+      'GET',
+      `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
+        `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=${limit}`,
+    )) as { results?: unknown[] } | null;
+    return data?.results ?? [];
+  };
 
-  const hit = (data?.results ?? [])
-    .map(shape)
-    .filter((r): r is ReservationSummary => r !== null)
-    .find((r) => r.confirmation_code && normalizeCode(r.confirmation_code) === normalized);
+  // 1. Exact, no guessing. Uppercase OTA codes, numeric codes, or a code given with the
+  //    right punctuation. One request.
+  const exactSet = Array.from(new Set([normalized, normalized.toLowerCase(), code.trim()]));
+  const exact = verify(await byFilter({ operator: '$in', field: 'confirmationCode', value: exactSet }, 5));
+  if (exact) {
+    log.info({ normalized, path: 'exact' }, 'confirmation_code_lookup');
+    return exact;
+  }
 
-  log.info({ normalized, variants: candidates.length, found: Boolean(hit) }, 'confirmation_code_lookup');
-  return hit ?? null;
+  // 2. Case + separator tolerant via case-insensitive $contains. A window that lands
+  //    inside any separator-free run matches, regardless of prefix length or hyphen
+  //    count. All probes fire together, so it costs one round-trip.
+  const windows = (len: number): string[] => {
+    const out: string[] = [];
+    for (let s = 0; len <= normalized.length && s + len <= normalized.length; s++) {
+      out.push(normalized.slice(s, s + len));
+    }
+    return out;
+  };
+
+  for (const len of [4, 3]) {
+    const needles = Array.from(new Set(len === 4 ? [normalized, ...windows(4)] : windows(3)));
+    const batches = await Promise.all(
+      needles.map((n) => byFilter({ operator: '$contains', field: 'confirmationCode', value: n }, 100)),
+    );
+    const hit = verify(batches.flat());
+    if (hit) {
+      log.info({ normalized, path: 'contains', window: len, probes: needles.length }, 'confirmation_code_lookup');
+      return hit;
+    }
+  }
+
+  log.info({ normalized, path: 'contains', found: false }, 'confirmation_code_lookup');
+  return null;
 }
 
 /**
