@@ -215,19 +215,74 @@ export async function findByEmail(email: string): Promise<ReservationSummary | n
   return preferCurrentStay(all);
 }
 
+// export async function findByConfirmationCode(code: string): Promise<ReservationSummary | null> {
+//   const filters = JSON.stringify([
+//     { field: 'confirmationCode', operator: '$eq', value: code.trim() },
+//   ]);
+//   const data = (await guestyFetch(
+//     'open_api',
+//     'GET',
+//     `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
+//       `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=1`,
+//   )) as { results?: unknown[] } | null;
+
+//   const first = (data?.results ?? [])[0];
+//   return first ? shape(first) : null;
+// }
+
 export async function findByConfirmationCode(code: string): Promise<ReservationSummary | null> {
+  const cleanCode = code.trim();
+  // Normalize the input by removing all spaces, hyphens, and forcing lowercase
+  const normalizedInput = cleanCode.replace(/[-\s]/g, '').toLowerCase();
+
+  // 1. Generate structural variations to catch the most common DB formats in one fast API call
+  const hyphenated = normalizedInput.length > 2
+    ? `${normalizedInput.substring(0, 2)}-${normalizedInput.substring(2)}`
+    : normalizedInput;
+
+  const variations = Array.from(new Set([
+    cleanCode,
+    normalizedInput,
+    normalizedInput.toUpperCase(),
+    normalizedInput.toLowerCase(),
+    hyphenated,
+    hyphenated.toUpperCase(),
+    hyphenated.toLowerCase()
+  ]));
+
   const filters = JSON.stringify([
-    { field: 'confirmationCode', operator: '$eq', value: code.trim() },
+    { field: 'confirmationCode', operator: '$in', value: variations },
   ]);
+
   const data = (await guestyFetch(
     'open_api',
     'GET',
-    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
-      `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=1`,
+    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}&fields=${encodeURIComponent(LIST_FIELDS)}&limit=10`,
   )) as { results?: unknown[] } | null;
 
-  const first = (data?.results ?? [])[0];
-  return first ? shape(first) : null;
+  const results = (data?.results ?? []).map(shape).filter((r): r is ReservationSummary => r !== null);
+
+  // Verify the match safely by comparing normalized versions
+  let match = results.find(r => 
+    r.confirmation_code && 
+    r.confirmation_code.replace(/[-\s]/g, '').toLowerCase() === normalizedInput
+  );
+
+  if (match) return match;
+
+  // 2. ULTIMATE FALLBACK: For extremely mixed-case codes (e.g., "z6noDRLZ2")
+  // Guesty's API is strictly case-sensitive and will reject the $in filter above.
+  // We fall back to fetching active stays and doing a bulletproof local comparison.
+  log.info({ code }, 'confirmation_api_match_failed_trying_local');
+  const recent = await activeReservations();
+
+  match = recent.find((r) => {
+    if (!r.confirmation_code) return false;
+    const normalizedDB = r.confirmation_code.replace(/[-\s]/g, '').toLowerCase();
+    return normalizedDB === normalizedInput;
+  });
+
+  return match ?? null;
 }
 
 /**
