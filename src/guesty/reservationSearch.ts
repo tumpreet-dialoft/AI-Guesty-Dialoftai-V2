@@ -230,59 +230,52 @@ export async function findByEmail(email: string): Promise<ReservationSummary | n
 //   return first ? shape(first) : null;
 // }
 
+// Codes arrive as "GY7FDBUX7F", callers never say "hyphen", and ASR never matches
+// Guesty's stored casing (which can be lowercase, e.g. "HA-123abc"). Strip anything
+// that is not a letter or digit and uppercase, so both sides compare on equal footing.
+export function normalizeCode(code: string): string {
+  return code.replace(/[^a-z0-9]/gi, '').toUpperCase();
+}
+
 export async function findByConfirmationCode(code: string): Promise<ReservationSummary | null> {
-  const cleanCode = code.trim();
-  // Normalize the input by removing all spaces, hyphens, and forcing lowercase
-  const normalizedInput = cleanCode.replace(/[-\s]/g, '').toLowerCase();
+  const normalized = normalizeCode(code);
+  if (!normalized) return null;
 
-  // 1. Generate structural variations to catch the most common DB formats in one fast API call
-  const hyphenated = normalizedInput.length > 2
-    ? `${normalizedInput.substring(0, 2)}-${normalizedInput.substring(2)}`
-    : normalizedInput;
-
-  const variations = Array.from(new Set([
-    cleanCode,
-    normalizedInput,
-    normalizedInput.toUpperCase(),
-    normalizedInput.toLowerCase(),
-    hyphenated,
-    hyphenated.toUpperCase(),
-    hyphenated.toLowerCase()
-  ]));
-
+  // Fast path: one request covering the common clean-code cases (stored upper or
+  // lower, no separators). Catches most direct and Airbnb codes without pulling the
+  // whole active set. $in lets us try both casings in a single call.
+  const variants = Array.from(new Set([normalized, normalized.toLowerCase(), code.trim()]));
   const filters = JSON.stringify([
-    { field: 'confirmationCode', operator: '$in', value: variations },
+    { field: 'confirmationCode', operator: '$in', value: variants },
   ]);
-
   const data = (await guestyFetch(
     'open_api',
     'GET',
-    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}&fields=${encodeURIComponent(LIST_FIELDS)}&limit=10`,
+    `${RESERVATIONS_PATH}?filters=${encodeURIComponent(filters)}` +
+      `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=5`,
   )) as { results?: unknown[] } | null;
 
-  const results = (data?.results ?? []).map(shape).filter((r): r is ReservationSummary => r !== null);
+  const direct = (data?.results ?? [])
+    .map(shape)
+    .filter((r): r is ReservationSummary => r !== null)
+    .find((r) => r.confirmation_code && normalizeCode(r.confirmation_code) === normalized);
+  if (direct) return direct;
 
-  // Verify the match safely by comparing normalized versions
-  let match = results.find(r => 
-    r.confirmation_code && 
-    r.confirmation_code.replace(/[-\s]/g, '').toLowerCase() === normalizedInput
+  // Fallback: the stored code has a shape $in cannot reach (hyphens, odd casing like
+  // "HA-123abc", stray spacing). Scan the active set and compare normalized to
+  // normalized. Bulletproof, and the active set is tiny for this property.
+  const candidates = await activeReservations();
+  const matches = candidates.filter(
+    (r) => r.confirmation_code && normalizeCode(r.confirmation_code) === normalized,
   );
 
-  if (match) return match;
+  log.info(
+    { normalized, poolSize: candidates.length, hits: matches.length, path: 'fallback_scan' },
+    'confirmation_code_lookup',
+  );
 
-  // 2. ULTIMATE FALLBACK: For extremely mixed-case codes (e.g., "z6noDRLZ2")
-  // Guesty's API is strictly case-sensitive and will reject the $in filter above.
-  // We fall back to fetching active stays and doing a bulletproof local comparison.
-  log.info({ code }, 'confirmation_api_match_failed_trying_local');
-  const recent = await activeReservations();
-
-  match = recent.find((r) => {
-    if (!r.confirmation_code) return false;
-    const normalizedDB = r.confirmation_code.replace(/[-\s]/g, '').toLowerCase();
-    return normalizedDB === normalizedInput;
-  });
-
-  return match ?? null;
+  if (matches.length === 0) return null;
+  return preferCurrentStay(matches); // reuses your existing stay-preference helper
 }
 
 /**
