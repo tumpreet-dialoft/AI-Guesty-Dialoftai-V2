@@ -233,20 +233,49 @@ export async function findByEmail(email: string): Promise<ReservationSummary | n
 // Codes arrive as "GY7FDBUX7F", callers never say "hyphen", and ASR never matches
 // Guesty's stored casing (which can be lowercase, e.g. "HA-123abc"). Strip anything
 // that is not a letter or digit and uppercase, so both sides compare on equal footing.
+// Codes arrive as "GY7FDBUX7F", callers never say "hyphen", and ASR never matches
+// Guesty's stored casing (which can be lowercase, e.g. "HA-123abc"). Strip anything
+// that is not a letter or digit and uppercase, so both sides compare on equal footing.
 export function normalizeCode(code: string): string {
   return code.replace(/[^a-z0-9]/gi, '').toUpperCase();
+}
+
+// Enumerate every casing of an alphanumeric string. Guesty direct codes are stored
+// mixed-case ("GY-7SDbuX7f"), which a caller can't reproduce by voice, so we generate
+// all castings and let exact $in match whichever one Guesty holds.
+function caseVariants(s: string, cap = 400): string[] {
+  const idx: number[] = [];
+  [...s].forEach((c, i) => { if (/[a-z]/i.test(c)) idx.push(i); });
+  if (2 ** idx.length > cap) return [s.toUpperCase(), s.toLowerCase()]; // pathological, degrade
+  const out = new Set<string>();
+  for (let mask = 0; mask < 2 ** idx.length; mask++) {
+    const ch = s.toUpperCase().split('');
+    idx.forEach((p, b) => { if (mask & (1 << b)) ch[p] = ch[p].toLowerCase(); });
+    out.add(ch.join(''));
+  }
+  return [...out];
+}
+
+// The exact strings Guesty might hold: the code as one run, and the common "XX-body"
+// hyphenated shape (GY-, HA-, HM-), each across all castings. Prefix kept uppercase,
+// which is how Guesty stores it.
+function codeCandidates(normalized: string): string[] {
+  const set = new Set<string>([normalized, normalized.toLowerCase()]);
+  if (normalized.length > 3) {
+    const prefix = normalized.slice(0, 2);
+    for (const body of caseVariants(normalized.slice(2))) set.add(`${prefix}-${body}`);
+  }
+  return [...set];
 }
 
 export async function findByConfirmationCode(code: string): Promise<ReservationSummary | null> {
   const normalized = normalizeCode(code);
   if (!normalized) return null;
 
-  // Fast path: one request covering the common clean-code cases (stored upper or
-  // lower, no separators). Catches most direct and Airbnb codes without pulling the
-  // whole active set. $in lets us try both casings in a single call.
-  const variants = Array.from(new Set([normalized, normalized.toLowerCase(), code.trim()]));
+  const candidates = codeCandidates(normalized);
+
   const filters = JSON.stringify([
-    { field: 'confirmationCode', operator: '$in', value: variants },
+    { operator: '$in', field: 'confirmationCode', value: candidates },
   ]);
   const data = (await guestyFetch(
     'open_api',
@@ -255,27 +284,13 @@ export async function findByConfirmationCode(code: string): Promise<ReservationS
       `&fields=${encodeURIComponent(LIST_FIELDS)}&limit=5`,
   )) as { results?: unknown[] } | null;
 
-  const direct = (data?.results ?? [])
+  const hit = (data?.results ?? [])
     .map(shape)
     .filter((r): r is ReservationSummary => r !== null)
     .find((r) => r.confirmation_code && normalizeCode(r.confirmation_code) === normalized);
-  if (direct) return direct;
 
-  // Fallback: the stored code has a shape $in cannot reach (hyphens, odd casing like
-  // "HA-123abc", stray spacing). Scan the active set and compare normalized to
-  // normalized. Bulletproof, and the active set is tiny for this property.
-  const candidates = await activeReservations();
-  const matches = candidates.filter(
-    (r) => r.confirmation_code && normalizeCode(r.confirmation_code) === normalized,
-  );
-
-  log.info(
-    { normalized, poolSize: candidates.length, hits: matches.length, path: 'fallback_scan' },
-    'confirmation_code_lookup',
-  );
-
-  if (matches.length === 0) return null;
-  return preferCurrentStay(matches); // reuses your existing stay-preference helper
+  log.info({ normalized, variants: candidates.length, found: Boolean(hit) }, 'confirmation_code_lookup');
+  return hit ?? null;
 }
 
 /**
