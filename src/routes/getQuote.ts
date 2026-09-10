@@ -61,17 +61,33 @@ router.post('/get_quote', async (req: Request, res: Response) => {
     );
 
     res.json(shaped);
-  } catch (err) {
-    log.error(
-      { err, requestId, route: '/get_quote', durationMs: Date.now() - start },
-      'handler_failed',
-    );
-    res.json({
-      error: true,
-      retryable: true,
-      message: 'The booking system did not answer. Try again in a moment.',
-    });
+
+  } catch (err: any) {
+    log.error({ err, requestId, route: '/get_quote', durationMs: Date.now() - start }, 'handler_failed');
+
+    // NEW LOGIC: Catch Guesty's strict business restriction errors (e.g., past dates, min nights)
+    const errorMessage = err?.message || '';
+    if (errorMessage.includes('LISTING_IS_NOT_AVAILABLE') || errorMessage.includes('business restriction')) {
+      res.json({ 
+        error: "This suite cannot be booked for these dates due to hotel restrictions (e.g. the date has already passed or it is fully booked). DO NOT retry. Tell the guest the suite is actually unavailable for those dates and offer to transfer them to the front desk." 
+      });
+      return;
+    }
+
+    // Generic fallback for actual system crashes
+    res.json({ error: "The booking system did not answer. Try again in a moment." });
   }
+  // } catch (err) {
+  //   log.error(
+  //     { err, requestId, route: '/get_quote', durationMs: Date.now() - start },
+  //     'handler_failed',
+  //   );
+  //   res.json({
+  //     error: true,
+  //     retryable: true,
+  //     message: 'The booking system did not answer. Try again in a moment.',
+  //   });
+  // }
 });
 
 export { router as getQuoteRouter };
