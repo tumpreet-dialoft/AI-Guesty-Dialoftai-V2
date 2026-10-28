@@ -10,12 +10,27 @@ import { normalizePhone } from '../util/phone';
 // message because the agent dropped a plus sign strands a guest who has already been
 // told someone will ring them back, which is the one outcome this route exists to
 // prevent. Take anything with enough digits to be a phone number.
+// const argsSchema = z.object({
+//   caller_name: z.string().min(1),
+//   callback_number: z.string().refine((s) => s.replace(/\D/g, '').length >= 7, {
+//     message: 'callback_number needs at least 7 digits',
+//   }),
+//   reason: z.string().min(1),
+//   details: z.string().default(''),
+//   priority: z.enum(['urgent', 'high', 'normal']).default('normal'),
+// });
+
 const argsSchema = z.object({
-  caller_name: z.string().min(1),
+  // FIX: If AI passes an empty name, don't crash. Just call them "Unknown Guest".
+  caller_name: z.string().optional().transform(v => (v && v.trim() !== '') ? v.trim() : 'Unknown Guest'),
+  
   callback_number: z.string().refine((s) => s.replace(/\D/g, '').length >= 7, {
     message: 'callback_number needs at least 7 digits',
   }),
-  reason: z.string().min(1),
+  
+  // FIX: Also protect the reason field just in case it is ever left blank
+  reason: z.string().optional().transform(v => (v && v.trim() !== '') ? v.trim() : 'General Inquiry'),
+  
   details: z.string().default(''),
   priority: z.enum(['urgent', 'high', 'normal']).default('normal'),
 });
