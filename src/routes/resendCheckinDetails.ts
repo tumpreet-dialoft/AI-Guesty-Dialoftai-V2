@@ -50,7 +50,16 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
   const requestId = req.headers['x-request-id'] ?? crypto.randomUUID();
 
   try {
-    const parsed = argsSchema.safeParse(extractArgs(req));
+    // The caller's own number is on the call record. If the agent passed nothing usable
+    // (it did, in simulation, 7 Nov 2026), look them up by caller ID rather than fail.
+    const args = { ...extractArgs(req) } as Record<string, unknown>;
+    const code = typeof args.confirmation_code === 'string' ? args.confirmation_code.trim() : '';
+    if (!code || /^none$|^null$|^unknown$|\{\{/i.test(code)) delete args.confirmation_code;
+    const callerId = (req.body?.call as { from_number?: string } | undefined)?.from_number;
+    if (!args.confirmation_code && !args.phone && !args.email && !args.guest_name && callerId) {
+      args.phone = callerId;
+    }
+    const parsed = argsSchema.safeParse(args);
     if (!parsed.success) {
       res.json({ ok: false, message: 'Need a confirmation code or a phone number.' });
       return;
