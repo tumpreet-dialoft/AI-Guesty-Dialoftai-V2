@@ -24,9 +24,12 @@ const argsSchema = z.object({
   // FIX: If AI passes an empty name, don't crash. Just call them "Unknown Guest".
   caller_name: z.string().optional().transform(v => (v && v.trim() !== '') ? v.trim() : 'Unknown Guest'),
   
-  callback_number: z.string().refine((s) => s.replace(/\D/g, '').length >= 7, {
-    message: 'callback_number needs at least 7 digits',
-  }),
+  // A caller who withholds their number, or won't give one, still gets logged: staff see
+  // the reason and the call id. Rejecting it here used to drop the message entirely.
+  callback_number: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.replace(/\D/g, '').length >= 7 ? v : 'withheld')),
   
   // FIX: Also protect the reason field just in case it is ever left blank
   reason: z.string().optional().transform(v => (v && v.trim() !== '') ? v.trim() : 'General Inquiry'),

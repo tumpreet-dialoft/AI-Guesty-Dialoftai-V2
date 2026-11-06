@@ -1,4 +1,5 @@
 import { guestyFetch } from './client';
+import { inTestMode } from '../util/testMode';
 import { log } from '../logger';
 import { nameScore, NAME_MATCH_THRESHOLD } from '../util/fuzzy';
 import { deriveGuestStatus, todayInTyler, addDays, GuestStatus } from '../util/stayStatus';
@@ -359,6 +360,26 @@ export async function findByNameAndDate(
 }
 
 /**
+ * Pick one booking out of fuzzy name matches, or say it's ambiguous.
+ *
+ * BUG FIX (call review, Nov 2026). A door-code caller standing outside on the day of
+ * arrival was matched to her own JULY stay, because every stay under her name scored
+ * the same and the list is sorted by score only. Several stays by the SAME guest are
+ * not ambiguous: she means the one she's on, then the next one, then the last one.
+ * Only different people with similar names need a question.
+ */
+export function pickMatch(
+  matches: ReservationSummary[],
+): { found: ReservationSummary | null; ambiguous: boolean } {
+  if (matches.length === 0) return { found: null, ambiguous: false };
+  if (matches.length === 1) return { found: matches[0], ambiguous: false };
+  const key = (r: ReservationSummary) => r.guest_full_name.trim().toLowerCase().replace(/\s+/g, ' ');
+  const people = new Set(matches.map(key));
+  if (people.size === 1) return { found: preferCurrentStay(matches), ambiguous: false };
+  return { found: null, ambiguous: true };
+}
+
+/**
  * Write the caller's real number back onto the guest record once we have identified
  * them some other way.
  *
@@ -367,6 +388,10 @@ export async function findByNameAndDate(
  * nobody has to do anything.
  */
 export async function attachPhoneToGuest(reservationId: string, phone: string): Promise<void> {
+  if (inTestMode()) {
+    log.info({ reservationId }, 'test_mode_phone_backfill_suppressed');
+    return;
+  }
   try {
     const raw = (await guestyFetch('open_api', 'GET', `${RESERVATIONS_PATH}/${reservationId}`)) as {
       guest?: { _id?: string; phone?: string };

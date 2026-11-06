@@ -8,6 +8,7 @@ import {
   findByPhone,
   findByEmail,
   attachPhoneToGuest,
+  pickMatch,
 } from '../guesty/reservationSearch';
 import { extractArgs } from '../util/extractArgs';
 
@@ -80,8 +81,9 @@ router.post('/lookup_reservation', async (req: Request, res: Response) => {
 
     if (!found && guest_name) {
       const matches = await findByNameAndDate(guest_name, check_in_date);
+      const picked = pickMatch(matches);
 
-      if (matches.length > 1) {
+      if (picked.ambiguous) {
         // Two people with the same name that week. THIS is the moment to ask for a
         // confirmation code, and the only one.
         log.info({ requestId, matches: matches.length }, 'lookup_ambiguous');
@@ -89,12 +91,14 @@ router.post('/lookup_reservation', async (req: Request, res: Response) => {
           found: false,
           ambiguous: true,
           matches: matches.length,
-          message: 'More than one booking matches that name. Ask for a confirmation code.',
+          message: check_in_date
+            ? 'More than one booking matches that name and date. Ask whether they have their confirmation code.'
+            : 'More than one booking matches that name. Ask for their check-in date and look up again.',
         });
         return;
       }
 
-      found = matches[0] ?? null;
+      found = picked.found;
 
       // Identified by name from an unrecognised number. Backfill it so caller ID
       // works next time. Small thing, compounds: the silent-recognition rate climbs

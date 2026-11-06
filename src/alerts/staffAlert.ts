@@ -2,6 +2,7 @@ import Twilio from 'twilio';
 import { config } from '../config';
 import { log } from '../logger';
 import { sendSms } from '../twilio/sms';
+import { inTestMode } from '../util/testMode';
 
 export type Priority = 'urgent' | 'high' | 'normal';
 
@@ -54,6 +55,10 @@ function smsFor(a: StaffAlert): string {
  * A ringing phone at 2am, with a voice saying "guest locked out of room four", is.
  */
 async function callStaff(to: string, spoken: string): Promise<boolean> {
+  if (inTestMode()) {
+    log.info({ to, spoken }, 'test_mode_staff_call_suppressed');
+    return true;
+  }
   try {
     const twiml =
       `<Response><Pause length="1"/>` +
@@ -117,7 +122,7 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
     }
   }
 
-  if (config.STAFF_ALERT_WEBHOOK_URL) {
+  if (config.STAFF_ALERT_WEBHOOK_URL && !inTestMode()) {
     jobs.push(
       fetch(config.STAFF_ALERT_WEBHOOK_URL, {
         method: 'POST',

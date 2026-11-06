@@ -2,7 +2,14 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { log } from '../logger';
 import { extractArgs } from '../util/extractArgs';
-import { findByConfirmationCode, findByPhone } from '../guesty/reservationSearch';
+import {
+  findByConfirmationCode,
+  findByPhone,
+  findByEmail,
+  findByNameAndDate,
+  pickMatch,
+  ReservationSummary,
+} from '../guesty/reservationSearch';
 import {
   findConversationByReservationId,
   sendGuestySms,
@@ -13,8 +20,17 @@ const argsSchema = z
   .object({
     confirmation_code: z.string().optional(),
     phone: z.string().optional(),
+    email: z.string().optional(),
+    // Expedia and Booking.com guests often have no phone on file, so the phone-only
+    // resend failed for them (15 of 29 resends in the Nov 2026 review). Name plus
+    // arrival date finds them. Still sends ONLY to the contact on the reservation.
+    guest_name: z.string().optional(),
+    check_in_date: z.string().optional(),
   })
-  .refine((d) => Boolean(d.confirmation_code || d.phone), 'Need a confirmation code or a phone');
+  .refine(
+    (d) => Boolean(d.confirmation_code || d.phone || d.email || d.guest_name),
+    'Need a confirmation code, phone, email or guest name',
+  );
 
 const router = Router();
 
@@ -40,11 +56,26 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
       return;
     }
 
-    const { confirmation_code, phone } = parsed.data;
+    const { confirmation_code, phone, email, guest_name, check_in_date } = parsed.data;
 
-    const reservation = confirmation_code
+    // Same ladder as /lookup_reservation: most certain first.
+    let reservation: ReservationSummary | null = confirmation_code
       ? await findByConfirmationCode(confirmation_code)
-      : await findByPhone(phone as string);
+      : null;
+    if (!reservation && phone) reservation = await findByPhone(phone);
+    if (!reservation && email) reservation = await findByEmail(email);
+    if (!reservation && guest_name) {
+      const picked = pickMatch(await findByNameAndDate(guest_name, check_in_date));
+      if (picked.ambiguous) {
+        res.json({
+          ok: false,
+          ambiguous: true,
+          message: 'More than one booking matches that name. Ask for their check-in date or confirmation code.',
+        });
+        return;
+      }
+      reservation = picked.found;
+    }
 
     if (!reservation) {
       res.json({ ok: false, message: 'No reservation found.' });
@@ -90,6 +121,13 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
       'checkin_details_resent',
     );
 
+    // ok means something actually went out. It used to be true even when no
+    // conversation was found and nothing was sent, and the agent told the guest it
+    // was on its way.
+    if (!smsSent && !emailSent) {
+      res.json({ ok: false, message: 'Found the booking but could not send the details. Transfer to the desk.' });
+      return;
+    }
     res.json({ ok: true, sent_to_sms: smsSent, sent_to_email: emailSent });
   } catch (err) {
     log.error({ err, requestId, route: '/resend_checkin_details' }, 'handler_failed');

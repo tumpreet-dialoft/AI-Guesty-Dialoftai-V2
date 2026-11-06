@@ -1,6 +1,7 @@
 import Twilio from 'twilio';
 import { config } from '../config';
 import { log } from '../logger';
+import { inTestMode } from '../util/testMode';
 
 let client: Twilio.Twilio | null = null;
 
@@ -12,6 +13,10 @@ function getClient(): Twilio.Twilio {
 }
 
 export async function sendSms(to: string, body: string): Promise<boolean> {
+  if (inTestMode()) {
+    log.info({ to, body }, 'test_mode_sms_suppressed');
+    return true;
+  }
   try {
     const result = await getClient().messages.create({
       to,

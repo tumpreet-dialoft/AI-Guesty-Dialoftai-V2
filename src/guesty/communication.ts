@@ -1,5 +1,6 @@
 import { guestyFetch } from './client';
 import { log } from '../logger';
+import { inTestMode } from '../util/testMode';
 
 // Guesty Open API base URL already includes /v1 (config.GUESTY_OAPI_BASE_URL),
 // so communication paths are relative to it.
@@ -52,6 +53,10 @@ async function send(
   module: { type: string },
   body: string,
 ): Promise<boolean> {
+  if (inTestMode()) {
+    log.info({ conversationId, channel: module.type, body }, 'test_mode_guesty_message_suppressed');
+    return true;
+  }
   try {
     await guestyFetch(
       'open_api',

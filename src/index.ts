@@ -12,11 +12,13 @@ import { sendReceiptRouter } from './routes/sendReceipt';
 import { resendCheckinDetailsRouter } from './routes/resendCheckinDetails';
 import { inboundLookupRouter } from './routes/inboundLookup';
 import { postCallRouter } from './routes/postCall';
+import { testModeMiddleware } from './util/testMode';
 import https from 'https';
 
 const app = express();
 
 app.use(express.json());
+app.use(testModeMiddleware); // see src/util/testMode.ts
 
 // ---------------------------------------------------------------------------
 // MOUNT ORDER MATTERS, AND IT WAS WRONG.

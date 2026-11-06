@@ -3,6 +3,9 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { config } from '../config';
 import { log } from '../logger';
+import { inTestMode } from '../util/testMode';
+import { raiseStaffAlert } from '../alerts/staffAlert';
+import { missedCallerAlert, analysisFlag } from '../alerts/missedCaller';
 
 // BUG FIX.
 //
@@ -106,7 +109,7 @@ router.post('/post_call', async (req: Request, res: Response) => {
     };
 
     // Fire-and-forget: forward to the rich webhook (Make.com)
-    if (config.POST_CALL_WEBHOOK_URL) {
+    if (config.POST_CALL_WEBHOOK_URL && !inTestMode()) {
       fetch(config.POST_CALL_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,16 +120,26 @@ router.post('/post_call', async (req: Request, res: Response) => {
     // The old staff alert only fired on a successful booking. That is a sales
     // notification, not an escalation. Anything the agent PROMISED a human would
     // follow up on has to reach a human, or the promise was a lie.
-    const analysis = callData.call_analysis ?? {};
-    if (analysis.needs_callback === true || analysis.is_urgent === true) {
+    // Custom analysis fields arrive under call_analysis.custom_analysis_data; this used to
+    // read them from the top level, where they never are.
+    const rawCall = req.body.call as Parameters<typeof missedCallerAlert>[0];
+    if (analysisFlag(rawCall, 'needs_callback') || analysisFlag(rawCall, 'is_urgent')) {
       log.warn(
-        { requestId, callId: callData.call_id, urgent: analysis.is_urgent === true },
+        { requestId, callId: callData.call_id, urgent: analysisFlag(rawCall, 'is_urgent') },
         'post_call_followup_required',
       );
     }
 
+    // A transfer that never connected, with no message taken: tell staff now.
+    const missed = missedCallerAlert(rawCall);
+    if (missed) {
+      const { notified } = await raiseStaffAlert(missed);
+      log.warn({ requestId, callId: callData.call_id, notified }, 'missed_caller_alert_raised');
+    }
+
     if (
       config.STAFF_ALERT_WEBHOOK_URL &&
+      !inTestMode() &&
       summary.intent === 'new_booking' &&
       summary.link_sent === true
     ) {
