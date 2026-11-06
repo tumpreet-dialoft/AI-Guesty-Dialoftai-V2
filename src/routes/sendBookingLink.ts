@@ -19,6 +19,10 @@ const argsSchema = z.object({
   // strict E.164 rule here just fails the call over a missing plus sign.
   phone_number: z.string().min(1),
   guest_name: z.string().optional(),
+  // Gate (Ava v25 sims, 7 Nov 2026): the agent sometimes texted the link without ever
+  // saying the cancellation policy. Only an explicit false blocks, so an agent that
+  // does not send the field (v24) behaves exactly as before.
+  cancellation_policy_said: z.union([z.boolean(), z.string()]).optional(),
 });
 
 const router = Router();
@@ -39,6 +43,18 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
     }
 
     const { suite_name, check_in_date, check_out_date, number_of_guests, guest_name } = parsed.data;
+
+    const said = parsed.data.cancellation_policy_said;
+    if (said === false || (typeof said === 'string' && said.trim().toLowerCase() === 'false')) {
+      res.json({
+        sent: false,
+        message:
+          'Not sent yet. First tell the caller the cancellation headline (paid in full when booked, fully ' +
+          'refundable up to fourteen days before arrival less a twenty dollar fee), then call again with ' +
+          'cancellation_policy_said true.',
+      });
+      return;
+    }
 
     const phone_number = normalizePhone(parsed.data.phone_number);
     if (!phone_number) {
