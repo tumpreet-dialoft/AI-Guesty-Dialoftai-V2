@@ -78,7 +78,12 @@ router.post('/resend_checkin_details', async (req: Request, res: Response) => {
     }
 
     if (!reservation) {
-      res.json({ ok: false, message: 'No reservation found.' });
+      res.json({
+        ok: false,
+        message: guest_name
+          ? 'No booking found under that name and date. Transfer to the desk.'
+          : 'No booking found with that. Ask for the name on the booking and their check-in date, then try again with guest_name and check_in_date.',
+      });
       return;
     }
 
