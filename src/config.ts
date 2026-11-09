@@ -70,8 +70,18 @@ const baseSchema = z.object({
   // not send that header on the inbound webhook. 32+ random characters.
   INBOUND_WEBHOOK_TOKEN: z.string().default(''),
 
-  // Retell's post-call webhook signing secret, from the Retell dashboard.
+  // Retell signs every request it sends (post-call webhook AND custom functions) with
+  // x-retell-signature, an HMAC made with the Retell API key that carries the webhook
+  // badge in the dashboard. Put that key here. See src/auth/retellSignature.ts.
   RETELL_WEBHOOK_SECRET: z.string().default(''),
+
+  // 'secret'    : custom functions are let in by the x-retell-secret header (old way).
+  //               If RETELL_WEBHOOK_SECRET is set, signatures are checked and counted
+  //               at GET /auth-status but never block anything.
+  // 'signature' : every Retell request must carry a valid x-retell-signature. The
+  //               x-retell-secret header is ignored. Switch only after /auth-status
+  //               shows real calls with valid signatures and none invalid.
+  RETELL_AUTH_MODE: z.enum(['secret', 'signature']).default('secret'),
 });
 
 function loadConfig() {
@@ -117,6 +127,14 @@ function loadConfig() {
       );
       process.exit(1);
     }
+  }
+
+  if (cfg.RETELL_AUTH_MODE === 'signature' && !cfg.RETELL_WEBHOOK_SECRET) {
+    // Refuse to start rather than reject every call: Render keeps the old instance
+    // serving when a new one fails to boot.
+    // eslint-disable-next-line no-console
+    console.error('RETELL_AUTH_MODE=signature needs RETELL_WEBHOOK_SECRET. Refusing to start.');
+    process.exit(1);
   }
 
   if (!cfg.STAFF_PRIMARY_NUMBER && cfg.NODE_ENV === 'production') {

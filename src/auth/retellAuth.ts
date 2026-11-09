@@ -1,17 +1,27 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../config';
+import { checkAndCount } from './retellSignature';
 
-// TODO: Upgrade to full Retell HMAC signature verification when available.
-// Retell may expose a per-account webhook signing secret that allows HMAC
-// verification over the raw request body. When that ships, replace the
-// shared-secret header check below with:
-//   1. Read `x-retell-signature` header.
-//   2. Compute HMAC-SHA256 of the raw body using the signing secret.
-//   3. timingSafeEqual the computed vs. provided signature.
-// Reference: https://docs.retellai.com (check webhook security section)
-
+// Custom functions. Two modes (RETELL_AUTH_MODE, see config.ts):
+//   secret    : the x-retell-secret header must match RETELL_SHARED_SECRET. The
+//               signature is still checked and counted when a key is set.
+//   signature : a valid x-retell-signature is required; x-retell-secret is ignored.
+// The shared secret travels in the agent's tool headers, so anyone who has seen the
+// agent config can use it. The signature needs the Retell API key, which never leaves
+// Retell or this server.
 export function retellAuth(req: Request, res: Response, next: NextFunction): void {
+  const signed = checkAndCount('functions', req, config.RETELL_WEBHOOK_SECRET);
+
+  if (config.RETELL_AUTH_MODE === 'signature') {
+    if (!signed) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    next();
+    return;
+  }
+
   const provided = req.headers['x-retell-secret'];
 
   if (typeof provided !== 'string' || provided.length === 0) {

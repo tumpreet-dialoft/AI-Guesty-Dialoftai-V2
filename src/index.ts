@@ -17,7 +17,15 @@ import https from 'https';
 
 const app = express();
 
-app.use(express.json());
+// Keep the exact bytes Retell signed: x-retell-signature is computed over the raw
+// body, and JSON.stringify(req.body) does not always reproduce it.
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as unknown as { rawBody?: string }).rawBody = buf.toString('utf8');
+    },
+  }),
+);
 app.use(testModeMiddleware); // see src/util/testMode.ts
 
 // ---------------------------------------------------------------------------

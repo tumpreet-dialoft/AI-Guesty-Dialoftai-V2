@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { config } from '../config';
+import { checkAndCount } from '../auth/retellSignature';
 import { log } from '../logger';
 import { inTestMode } from '../util/testMode';
 import { raiseStaffAlert } from '../alerts/staffAlert';
@@ -23,25 +24,20 @@ import { missedCallerAlert, analysisFlag } from '../alerts/missedCaller';
 // full call transcripts have been landing in a public inspection bin ever since.
 //
 // It is now mounted ABOVE retellAuth and verifies Retell's signature itself.
-function verifyRetellSignature(req: Request): boolean {
-  // No secret configured: fail open, but say so. Better a logged gap than a silently
-  // dropped webhook that nobody notices for another month.
+function postCallAuthorized(req: Request): boolean {
+  // Retell's format is v=<ms>,d=<hmac(rawBody + ms)>; the old check hashed
+  // JSON.stringify(body) with no timestamp and could never have matched.
+  // While RETELL_AUTH_MODE is 'secret' this only counts (GET /auth-status), so setting
+  // the key cannot start dropping real webhooks. In 'signature' mode it enforces.
+  const ok = checkAndCount('post_call', req, config.RETELL_WEBHOOK_SECRET);
+  if (ok) return true;
+  if (config.RETELL_AUTH_MODE === 'signature') return false;
   if (!config.RETELL_WEBHOOK_SECRET) {
     log.warn({}, 'RETELL_WEBHOOK_SECRET not set, post-call webhook is unverified');
-    return true;
+  } else {
+    log.warn({}, 'post_call_signature_not_valid_accepted_in_secret_mode');
   }
-
-  const provided = req.headers['x-retell-signature'];
-  if (typeof provided !== 'string' || provided.length === 0) return false;
-
-  const expected = crypto
-    .createHmac('sha256', config.RETELL_WEBHOOK_SECRET)
-    .update(JSON.stringify(req.body))
-    .digest('hex');
-
-  const a = Buffer.from(provided, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  return true;
 }
 
 const schema = z.object({
@@ -69,7 +65,7 @@ router.post('/post_call', async (req: Request, res: Response) => {
 
   const requestId = req.headers['x-request-id'] ?? crypto.randomUUID();
 
-  if (!verifyRetellSignature(req)) {
+  if (!postCallAuthorized(req)) {
     log.warn({ requestId }, 'post_call_signature_invalid');
     res.status(401).json({ error: 'unauthorized' });
     return;
