@@ -3,6 +3,7 @@ import { sleep } from '../util/sleep';
 import { jitter } from '../util/jitter';
 import { findGuestIdByPhone, createGuest } from './guests';
 import { createInquiryReservation } from './reservations';
+import { inTestMode } from '../util/testMode';
 import {
   findConversationByGuestId,
   findConversationByReservationId,
@@ -43,6 +44,13 @@ export async function sendBookingLinkViaGuesty(params: {
   body: string;
 }): Promise<boolean> {
   const { phone, guestName, listingId, checkIn, checkOut, guests, body } = params;
+
+  // Test calls must not create a guest or an inquiry in Guesty (9 Nov: an end-to-end test
+  // through this path left one inquiry lead behind; sends were already suppressed).
+  if (inTestMode()) {
+    log.info({ listingId, checkIn, checkOut }, 'test_mode_booking_link_suppressed');
+    return true;
+  }
 
   // --- Fast path: existing guest already has a conversation ---
   let guestId = await findGuestIdByPhone(phone);

@@ -95,3 +95,16 @@ describe('test mode', () => {
     expect(mockGuestyFetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('test mode: booking link via Guesty', () => {
+  it('creates no guest, inquiry or message in Guesty', async () => {
+    mockGuestyFetch.mockReset();
+    const { sendBookingLinkViaGuesty } = await import('../../src/guesty/bookingSms');
+    const ok = await withTestMode(true, () =>
+      sendBookingLinkViaGuesty({ phone: '+19035550123', guestName: 'Guest', listingId: 'lst', checkIn: '2026-12-03',
+        checkOut: '2026-12-05', guests: 2, body: 'x' }),
+    );
+    expect(ok).toBe(true);
+    expect(mockGuestyFetch).not.toHaveBeenCalled();
+  });
+});
