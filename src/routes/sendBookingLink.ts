@@ -49,9 +49,10 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
       res.json({
         sent: false,
         message:
-          'Not sent yet. First tell the caller the cancellation headline (paid in full when booked, fully ' +
-          'refundable up to fourteen days before arrival less a twenty dollar fee), then call again with ' +
-          'cancellation_policy_said true.',
+          // No policy wording here on purpose: the prompt owns it, so a policy change never
+          // needs a backend deploy (10 Nov the hotel moved from fourteen days to seven).
+          'Not sent yet. First tell the caller the cancellation headline from your instructions, ' +
+          'then call again with cancellation_policy_said true.',
       });
       return;
     }
