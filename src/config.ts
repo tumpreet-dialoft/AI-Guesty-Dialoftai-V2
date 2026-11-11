@@ -61,6 +61,9 @@ const baseSchema = z.object({
   // guest someone is ringing them back.
   STAFF_PRIMARY_NUMBER: z.string().default(''), // E.164. Andrew.
   STAFF_BACKUP_NUMBER: z.string().default(''), // E.164. Whoever answers at 2am.
+  // The hotel's front desk line (Michelle, 9 Nov 2026: "push text messages from Ava to 903-426-8958").
+  // Texts only, never a call: this line forwards calls to Ava herself. Set to '' to switch off.
+  STAFF_DESK_SMS_NUMBER: z.string().default('+19034268958'),
 
   // n8n. Owns delivery of receipts and the pre-arrival email re-send, because
   // Guesty exposes no public endpoint for either.

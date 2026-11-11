@@ -101,6 +101,16 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
     );
   }
 
+  // Every alert is also texted to the front desk line, unless it is the primary already.
+  const desk = config.STAFF_DESK_SMS_NUMBER;
+  if (desk && desk !== primary) {
+    jobs.push(
+      sendSms(desk, smsFor(alert)).then((ok) => {
+        if (ok) notified.push('sms_desk');
+      }),
+    );
+  }
+
   if (alert.priority === 'urgent' && primary) {
     jobs.push(
       callStaff(primary, spokenFor(alert)).then(async (ok) => {
