@@ -1,0 +1,139 @@
+import { guestyFetch } from './client';
+import { log } from '../logger';
+
+// Where a reservation's door code can live in Guesty. Michelle (12 Nov 2026): "The code is
+// listed in Guesty on the 'overview' page". Guesty has three places that can hold it, so we
+// read all three and take the first value that looks like a code:
+//   key_code      reservation notes.keyCode ("key code for workflow automation")
+//   lock_manager  Guesty Locks Manager, GET /guest-code?reservationId=
+//   custom_field  a reservation custom field named like door / key code / lock / access / entry
+export type DoorCodeSource = 'key_code' | 'lock_manager' | 'custom_field';
+
+export interface DoorCodeCandidate {
+  source: DoorCodeSource;
+  label: string;
+  raw: unknown;
+  code: string | null;
+}
+
+export interface DoorCodeResult {
+  best: DoorCodeCandidate | null;
+  candidates: DoorCodeCandidate[];
+  errors: string[];
+}
+
+const DOORISH = /door|key.?code|lock|access|entry|gate|keypad/i;
+const DEAD_CODE_STATUS = /fail|delet|revok|expir|error|cancel|inactive/i;
+
+/**
+ * A door code as a guest keys it in: 3 to 9 characters of digits, optionally with # or *. A short free
+ * text note yields its single digit run ("Code: 4821#" gives "4821#"). Anything ambiguous
+ * (two numbers, long prose) is not a code: the caller is transferred instead.
+ */
+export function cleanDoorCode(raw: unknown): string | null {
+  const s = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : '';
+  if (!s) return null;
+  if (/^[0-9][0-9#*]{2,8}$/.test(s)) return s;
+  if (s.length > 40) return null;
+  // Whole digit runs only, so a phone number in the note never becomes a "code".
+  const runs = s.match(/(?<![0-9])[0-9][0-9#*]{2,8}(?![0-9])/g) ?? [];
+  return runs.length === 1 ? runs[0] : null;
+}
+
+/** "str[4] 9999": the shape of a value with every digit and letter masked. For logs and test mode. */
+export function maskShape(raw: unknown): string {
+  if (raw === null || raw === undefined) return 'empty';
+  const s = String(raw);
+  return `${typeof raw}[${s.length}] ${s.replace(/[0-9]/g, '9').replace(/[A-Za-z]/g, 'a').slice(0, 24)}`;
+}
+
+let fieldNames: { at: number; byId: Map<string, string> } | null = null;
+const FIELD_NAMES_TTL_MS = 6 * 60 * 60 * 1000;
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function customFieldNames(): Promise<Map<string, string>> {
+  if (fieldNames && Date.now() - fieldNames.at < FIELD_NAMES_TTL_MS) return fieldNames.byId;
+  const me = (await guestyFetch('open_api', 'GET', '/accounts/me', undefined, { authRetry: false })) as any;
+  const accountId = me?._id ?? me?.id;
+  const byId = new Map<string, string>();
+  if (accountId) {
+    const defs = (await guestyFetch('open_api', 'GET', `/accounts/${accountId}/custom-fields`, undefined, {
+      authRetry: false,
+    })) as any;
+    for (const d of Array.isArray(defs) ? defs : defs?.results ?? defs?.customFields ?? []) {
+      const id = d?.fieldId ?? d?._id;
+      if (id) byId.set(String(id), [d?.key, d?.displayName, d?.object].filter(Boolean).join(' / '));
+    }
+  }
+  fieldNames = { at: Date.now(), byId };
+  return byId;
+}
+
+/** Reset the custom-field name cache (tests). */
+export function resetDoorCodeCache(): void {
+  fieldNames = null;
+}
+
+export async function findDoorCode(reservationId: string): Promise<DoorCodeResult> {
+  const candidates: DoorCodeCandidate[] = [];
+  const errors: string[] = [];
+  const id = encodeURIComponent(reservationId);
+
+  // 1. notes.keyCode, plus the reservation's custom field values, in one read of an
+  //    endpoint the backend already uses.
+  let customValues: { fieldId?: string; value?: unknown }[] = [];
+  try {
+    const r = (await guestyFetch(
+      'open_api',
+      'GET',
+      `/reservations/${id}?fields=${encodeURIComponent('notes customFields')}`,
+    )) as any;
+    const res = r?.result ?? r;
+    if (res?.notes?.keyCode !== undefined && res?.notes?.keyCode !== '') {
+      candidates.push({ source: 'key_code', label: 'notes.keyCode', raw: res.notes.keyCode, code: cleanDoorCode(res.notes.keyCode) });
+    }
+    if (Array.isArray(res?.customFields)) customValues = res.customFields;
+  } catch (err) {
+    errors.push(`reservation: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
+
+  // 2. Guesty Locks Manager.
+  try {
+    const g = (await guestyFetch('open_api', 'GET', `/guest-code?reservationId=${id}`, undefined, {
+      authRetry: false,
+    })) as any;
+    for (const c of g?.codes ?? []) {
+      if (DEAD_CODE_STATUS.test(String(c?.status ?? ''))) continue;
+      candidates.push({ source: 'lock_manager', label: `guest-code ${c?.purpose ?? ''} ${c?.status ?? ''}`.trim(), raw: c?.code, code: cleanDoorCode(c?.code) });
+    }
+  } catch (err) {
+    errors.push(`lock_manager: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
+
+  // 3. Custom fields whose name says door / key code / lock / access / entry.
+  if (customValues.length) {
+    try {
+      const names = await customFieldNames();
+      for (const f of customValues) {
+        const name = names.get(String(f?.fieldId ?? '')) ?? '';
+        if (name && DOORISH.test(name)) {
+          candidates.push({ source: 'custom_field', label: name, raw: f?.value, code: cleanDoorCode(f?.value) });
+        }
+      }
+    } catch (err) {
+      errors.push(`custom_fields: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  const best = candidates.find((c) => c.code) ?? null;
+  log.info(
+    {
+      reservationId,
+      best: best ? `${best.source} ${maskShape(best.code)}` : null,
+      candidates: candidates.map((c) => `${c.source}:${c.label}:${maskShape(c.raw)}`),
+      errors,
+    },
+    'door_code_lookup',
+  );
+  return { best, candidates, errors };
+}

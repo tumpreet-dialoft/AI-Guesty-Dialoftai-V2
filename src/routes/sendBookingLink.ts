@@ -153,8 +153,10 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
     res.json({
       sent,
       sent_to_last4: sent ? last4 : null,
+      same_day_alert: sameDayAlert,
       message: sent
-        ? `Booking link texted to the number ending ${last4}.`
+        ? `Booking link texted to the number ending ${last4}.` +
+          (sameDayAlert?.length ? ' The front desk has been texted that this guest arrives tonight.' : '')
         : 'The text could not be sent.',
     });
   } catch (err) {

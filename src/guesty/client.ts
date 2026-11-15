@@ -15,6 +15,11 @@ export async function guestyFetch(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
+  // authRetry false: a 401/403 throws instead of minting a new token. For endpoints this
+  // account may not be licensed for (Locks Manager, custom-field definitions): a 403 there
+  // means "no access", and refreshing would spend one of Guesty's few daily token mints on
+  // every call.
+  opts: { authRetry?: boolean } = {},
 ): Promise<unknown> {
   const baseUrl = api === 'booking_engine' ? config.GUESTY_BE_BASE_URL : config.GUESTY_OAPI_BASE_URL;
   const url = `${baseUrl}${path}`;
@@ -67,7 +72,7 @@ export async function guestyFetch(
     }
 
     if (resp.status === 401 || resp.status === 403) {
-      if (authRetried) {
+      if (authRetried || opts.authRetry === false) {
         throw new GuestyError('auth_failed', `${resp.status} after token refresh on ${path}`);
       }
       authRetried = true;

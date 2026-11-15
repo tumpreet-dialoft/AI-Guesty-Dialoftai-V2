@@ -10,6 +10,7 @@ import { lookupReservationRouter } from './routes/lookupReservation';
 import { takeMessageRouter } from './routes/takeMessage';
 import { sendReceiptRouter } from './routes/sendReceipt';
 import { resendCheckinDetailsRouter } from './routes/resendCheckinDetails';
+import { getDoorCodeRouter } from './routes/getDoorCode';
 import { inboundLookupRouter } from './routes/inboundLookup';
 import { postCallRouter } from './routes/postCall';
 import { testModeMiddleware } from './util/testMode';
@@ -55,6 +56,7 @@ app.use(lookupReservationRouter);
 app.use(takeMessageRouter);
 app.use(sendReceiptRouter);
 app.use(resendCheckinDetailsRouter);
+app.use(getDoorCodeRouter);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   log.error({ err }, 'unhandled_error');
