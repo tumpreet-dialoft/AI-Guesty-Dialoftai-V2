@@ -95,7 +95,7 @@ router.post('/get_door_code', async (req: Request, res: Response) => {
       return;
     }
 
-    const found = await findDoorCode(r.reservation_id);
+    const found = await findDoorCode(r.reservation_id, { diagnose: inTestMode() });
 
     // Test mode (simulations, QA, our own checks) never sees a real code: it gets the source
     // and the masked shape, which is all a test needs to prove the path works.
@@ -107,6 +107,7 @@ router.post('/get_door_code', async (req: Request, res: Response) => {
         code_shape: found.best ? maskShape(found.best.code) : null,
         candidates: found.candidates.map((c) => ({ source: c.source, label: c.label, shape: maskShape(c.raw), usable: Boolean(c.code) })),
         errors: found.errors,
+        diag: found.diag,
         suite: r.suite,
       });
       return;

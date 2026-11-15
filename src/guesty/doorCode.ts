@@ -20,6 +20,9 @@ export interface DoorCodeResult {
   best: DoorCodeCandidate | null;
   candidates: DoorCodeCandidate[];
   errors: string[];
+  // Test mode only: what the reservation holds, names and masked shapes, never values.
+  // Lets one check against a real booking show where the hotel actually keeps codes.
+  diag?: Record<string, unknown>;
 }
 
 const DOORISH = /door|key.?code|lock|access|entry|gate|keypad/i;
@@ -74,7 +77,7 @@ export function resetDoorCodeCache(): void {
   fieldNames = null;
 }
 
-export async function findDoorCode(reservationId: string): Promise<DoorCodeResult> {
+export async function findDoorCode(reservationId: string, opts: { diagnose?: boolean } = {}): Promise<DoorCodeResult> {
   const candidates: DoorCodeCandidate[] = [];
   const errors: string[] = [];
   const id = encodeURIComponent(reservationId);
@@ -82,17 +85,25 @@ export async function findDoorCode(reservationId: string): Promise<DoorCodeResul
   // 1. notes.keyCode, plus the reservation's custom field values, in one read of an
   //    endpoint the backend already uses.
   let customValues: { fieldId?: string; value?: unknown }[] = [];
+  let listingId: string | null = null;
+  const diag: Record<string, unknown> = {};
   try {
     const r = (await guestyFetch(
       'open_api',
       'GET',
-      `/reservations/${id}?fields=${encodeURIComponent('notes customFields')}`,
+      `/reservations/${id}?fields=${encodeURIComponent('notes customFields listingId')}`,
     )) as any;
     const res = r?.result ?? r;
     if (res?.notes?.keyCode !== undefined && res?.notes?.keyCode !== '') {
       candidates.push({ source: 'key_code', label: 'notes.keyCode', raw: res.notes.keyCode, code: cleanDoorCode(res.notes.keyCode) });
     }
     if (Array.isArray(res?.customFields)) customValues = res.customFields;
+    listingId = res?.listingId ?? res?.listing?._id ?? null;
+    if (opts.diagnose) {
+      diag.reservation_keys = Object.keys(res ?? {});
+      diag.notes = Object.fromEntries(Object.entries(res?.notes ?? {}).map(([k, v]) => [k, maskShape(v)]));
+      diag.custom_field_count = customValues.length;
+    }
   } catch (err) {
     errors.push(`reservation: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
   }
@@ -102,6 +113,7 @@ export async function findDoorCode(reservationId: string): Promise<DoorCodeResul
     const g = (await guestyFetch('open_api', 'GET', `/guest-code?reservationId=${id}`, undefined, {
       authRetry: false,
     })) as any;
+    if (opts.diagnose) diag.lock_manager = { codes: (g?.codes ?? []).length, locks: (g?.locks ?? []).length };
     for (const c of g?.codes ?? []) {
       if (DEAD_CODE_STATUS.test(String(c?.status ?? ''))) continue;
       candidates.push({ source: 'lock_manager', label: `guest-code ${c?.purpose ?? ''} ${c?.status ?? ''}`.trim(), raw: c?.code, code: cleanDoorCode(c?.code) });
@@ -114,6 +126,9 @@ export async function findDoorCode(reservationId: string): Promise<DoorCodeResul
   if (customValues.length) {
     try {
       const names = await customFieldNames();
+      if (opts.diagnose) {
+        diag.custom_fields = customValues.map((f) => `${names.get(String(f?.fieldId ?? '')) ?? f?.fieldId}: ${maskShape(f?.value)}`);
+      }
       for (const f of customValues) {
         const name = names.get(String(f?.fieldId ?? '')) ?? '';
         if (name && DOORISH.test(name)) {
@@ -122,6 +137,22 @@ export async function findDoorCode(reservationId: string): Promise<DoorCodeResul
       }
     } catch (err) {
       errors.push(`custom_fields: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  // Per-suite custom fields: reported in test mode only, never read out. A fixed suite code
+  // could be a master or cleaning code; it becomes a source only if the hotel says so.
+  if (opts.diagnose && listingId) {
+    try {
+      const pc = (await guestyFetch('open_api', 'GET', `/properties-api/custom-fields/${encodeURIComponent(listingId)}`, undefined, {
+        authRetry: false,
+      })) as any;
+      const names = await customFieldNames().catch(() => new Map<string, string>());
+      diag.listing_custom_fields = (pc?.customFields ?? []).map(
+        (f: any) => `${names.get(String(f?.fieldId ?? '')) ?? f?.displayName ?? f?.fieldId}: ${maskShape(f?.value)}`,
+      );
+    } catch (err) {
+      errors.push(`listing_custom_fields: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
     }
   }
 
@@ -135,5 +166,5 @@ export async function findDoorCode(reservationId: string): Promise<DoorCodeResul
     },
     'door_code_lookup',
   );
-  return { best, candidates, errors };
+  return opts.diagnose ? { best, candidates, errors, diag } : { best, candidates, errors };
 }
