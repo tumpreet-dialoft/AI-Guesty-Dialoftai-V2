@@ -9,6 +9,8 @@ import { sendSms } from '../twilio/sms';
 import { sendBookingLinkViaGuesty } from '../guesty/bookingSms';
 import { extractArgs } from '../util/extractArgs';
 import { normalizePhone } from '../util/phone';
+import { todayInTyler } from '../util/stayStatus';
+import { raiseStaffAlert } from '../alerts/staffAlert';
 
 const argsSchema = z.object({
   suite_name: z.string(),
@@ -103,6 +105,25 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
         })
       : await sendSms(phone_number, body);
 
+    // Michelle, 12 Nov 2026: a same-day booking means the lock system has to be updated
+    // right away, so the team gets a text the moment Ava sends a link for tonight. The
+    // link is all Ava can see (the guest pays on the website), so the text says to watch
+    // for the booking. raiseStaffAlert never throws, and test mode suppresses the texts.
+    let sameDayAlert: string[] | null = null;
+    if (sent && check_in_date === todayInTyler()) {
+      const g = number_of_guests === 1 ? '1 guest' : `${number_of_guests} guests`;
+      const { notified } = await raiseStaffAlert({
+        caller_name: guest_name?.trim() || 'A caller',
+        callback_number: phone_number,
+        reason: 'SAME-DAY booking link',
+        details:
+          `Ava texted a booking link for ${suite_name} tonight (${check_in_date} to ${check_out_date}, ${g}). ` +
+          `Update the lock system when it books.`,
+        priority: 'high',
+      });
+      sameDayAlert = notified;
+    }
+
     // BUG FIX. This used to return only { sent: boolean }.
     //
     // In the June demo Ava said the link had gone to the number "ending in 9964",
@@ -120,6 +141,7 @@ router.post('/send_booking_link', async (req: Request, res: Response) => {
         route: '/send_booking_link',
         durationMs: Date.now() - start,
         outcome: sent ? 'ok' : 'sms_failed',
+        sameDayAlert,
       },
       'request_complete',
     );

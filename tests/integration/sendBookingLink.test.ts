@@ -2,6 +2,7 @@ import './setup';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app } from '../../src/index';
+import { todayInTyler } from '../../src/util/stayStatus';
 
 const mockCreate = vi.fn();
 
@@ -120,5 +121,57 @@ describe('POST /send_booking_link', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.sent).toBe(false);
+  });
+
+  // Michelle, 12 Nov 2026: a same-day booking needs the lock system updated, so text the team.
+  describe('same-day booking alert', () => {
+    const tomorrow = (d: string) => {
+      const t = new Date(`${d}T12:00:00Z`);
+      t.setUTCDate(t.getUTCDate() + 1);
+      return t.toISOString().slice(0, 10);
+    };
+    const send = (check_in_date: string, check_out_date: string) =>
+      request(app)
+        .post('/send_booking_link')
+        .set('x-retell-secret', SECRET)
+        .send({
+          suite_name: 'Garden Suite',
+          check_in_date,
+          check_out_date,
+          number_of_guests: '2',
+          phone_number: '+19035551234',
+          guest_name: 'Dana Fox',
+        });
+
+    it('texts the front desk when the stay starts today', async () => {
+      mockCreate.mockResolvedValue({ sid: 'SM_test_sd' });
+      const today = todayInTyler();
+      const res = await send(today, tomorrow(today));
+
+      expect(res.body.sent).toBe(true);
+      const bodies = mockCreate.mock.calls.map((c) => c[0] as { to: string; body: string });
+      expect(bodies).toHaveLength(2);
+      expect(bodies[0].to).toBe('+19035551234');
+      const alert = bodies.find((b) => b.to === '+19034268958');
+      expect(alert?.body).toContain('SAME-DAY booking link');
+      expect(alert?.body).toContain('Garden Suite tonight');
+      expect(alert?.body).toContain('Dana Fox');
+      expect(alert?.body).toContain('Update the lock system');
+    });
+
+    it('sends no alert for a stay on another day', async () => {
+      mockCreate.mockResolvedValue({ sid: 'SM_test_fut' });
+      const res = await send('2099-07-04', '2099-07-06');
+      expect(res.body.sent).toBe(true);
+      expect(mockCreate).toHaveBeenCalledOnce();
+    });
+
+    it('sends no alert when the guest link itself failed', async () => {
+      mockCreate.mockRejectedValue(new Error('twilio down'));
+      const today = todayInTyler();
+      const res = await send(today, tomorrow(today));
+      expect(res.body.sent).toBe(false);
+      expect(mockCreate).toHaveBeenCalledOnce();
+    });
   });
 });
