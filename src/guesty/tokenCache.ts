@@ -37,8 +37,10 @@ const caches: Record<ApiType, TokenCacheEntry> = {
 
 function loadFromDisk(): void {
   try {
-    if (!fs.existsSync(TOKEN_FILE)) return;
-    const raw = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
+    // A fresh container has no /tmp file: fall back to the copy kept in the service's env.
+    const source = fs.existsSync(TOKEN_FILE) ? fs.readFileSync(TOKEN_FILE, 'utf8') : process.env.GUESTY_TOKEN_CACHE;
+    if (!source) return;
+    const raw = JSON.parse(source);
     for (const api of ['booking_engine', 'open_api'] as ApiType[]) {
       if (raw[api]?.accessToken && raw[api]?.expiresAt) {
         caches[api].cached = {
@@ -62,6 +64,27 @@ function saveToDisk(): void {
     fs.writeFileSync(TOKEN_FILE, JSON.stringify(data), 'utf8');
   } catch (err) {
     log.warn({ err, file: TOKEN_FILE }, 'token_disk_save_failed');
+  }
+  void persistToRenderEnv();
+}
+
+/** Keep a copy in the service's env so a redeploy reuses the token instead of minting one. */
+export async function persistToRenderEnv(): Promise<boolean> {
+  const serviceId = process.env.RENDER_SERVICE_ID;
+  if (!config.RENDER_API_KEY || !serviceId) return false;
+  try {
+    const data: Record<string, CachedToken | null> = {};
+    for (const api of ['booking_engine', 'open_api'] as ApiType[]) data[api] = caches[api].cached;
+    const resp = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars/GUESTY_TOKEN_CACHE`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${config.RENDER_API_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ value: JSON.stringify(data) }),
+    });
+    log.info({ status: resp.status }, resp.ok ? 'token_persisted_to_env' : 'token_persist_failed');
+    return resp.ok;
+  } catch (err) {
+    log.warn({ err }, 'token_persist_failed');
+    return false;
   }
 }
 
@@ -87,8 +110,12 @@ async function fetchToken(cfg: TokenEndpointConfig): Promise<CachedToken> {
   });
 
   if (!resp.ok) {
-    log.error({ status: resp.status, api: cfg.tokenUrl }, 'token_fetch_failed');
-    throw new GuestyError('token_fetch_failed', `HTTP ${resp.status} from token endpoint`);
+    // Guesty: ratelimit-reset = seconds until the used token slot regenerates (rolling 24 h).
+    const reset = Number(resp.headers?.get?.('ratelimit-reset') ?? 0) || 0;
+    log.error({ status: resp.status, api: cfg.tokenUrl, resetSec: reset || undefined }, 'token_fetch_failed');
+    const err = new GuestyError('token_fetch_failed', `HTTP ${resp.status} from token endpoint`);
+    (err as GuestyError & { resetSec?: number }).resetSec = reset;
+    throw err;
   }
 
   const data = (await resp.json()) as { access_token: string; expires_in: number };
@@ -154,7 +181,9 @@ export async function getToken(api: ApiType): Promise<string> {
     return result.accessToken;
   } catch (err) {
     entry.cached = null;
-    entry.blockedUntil = Date.now() + TOKEN_FAILURE_COOLDOWN_MS;
+    // Wait as long as Guesty says (capped at an hour so a slot freeing early is not missed).
+    const resetMs = Math.min(((err as { resetSec?: number })?.resetSec ?? 0) * 1000, 60 * 60 * 1000);
+    entry.blockedUntil = Date.now() + Math.max(TOKEN_FAILURE_COOLDOWN_MS, resetMs);
     throw err;
   } finally {
     entry.inflight = null;

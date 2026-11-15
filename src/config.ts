@@ -68,6 +68,11 @@ const baseSchema = z.object({
   // staff alerts go through Guesty's texting into a dedicated "Ava Alerts - Front Desk" conversation,
   // the channel guest booking links already use. Set = Guesty is the alert text channel.
   GUESTY_ALERT_CONVERSATION_ID: z.string().default(''),
+  // 15 Nov 2026: Guesty allows 5 OAuth tokens per rolling 24 h, and every Render deploy wiped the
+  // /tmp token cache, so a day of deploys locked the Open API out. With this set, a fresh token is
+  // also saved to the service's own env var GUESTY_TOKEN_CACHE (Render API) and read back after a
+  // restart. RENDER_SERVICE_ID is provided by Render itself.
+  RENDER_API_KEY: z.string().default(''),
   // Also send the Twilio texts while Guesty is on (only useful once the Twilio campaign is approved).
   STAFF_ALERT_TWILIO_SMS: boolString,
 
