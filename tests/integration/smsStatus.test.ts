@@ -4,7 +4,7 @@ import request from 'supertest';
 
 const mockList = vi.fn();
 vi.mock('twilio', () => ({
-  default: () => ({ messages: { list: (...a: unknown[]) => mockList(...a), create: vi.fn() } }),
+  default: () => ({ messages: { list: (...a: unknown[]) => mockList(...a), create: vi.fn() }, calls: { list: async () => [] } }),
 }));
 
 import { app } from '../../src/index';

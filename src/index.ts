@@ -13,6 +13,7 @@ import { resendCheckinDetailsRouter } from './routes/resendCheckinDetails';
 import { getDoorCodeRouter } from './routes/getDoorCode';
 import { smsStatusRouter } from './routes/smsStatus';
 import { guestyMessagesRouter } from './routes/guestyMessages';
+import { alertSetupRouter } from './routes/alertSetup';
 import { inboundLookupRouter } from './routes/inboundLookup';
 import { postCallRouter } from './routes/postCall';
 import { testModeMiddleware } from './util/testMode';
@@ -61,6 +62,7 @@ app.use(resendCheckinDetailsRouter);
 app.use(getDoorCodeRouter);
 app.use(smsStatusRouter);
 app.use(guestyMessagesRouter);
+app.use(alertSetupRouter);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   log.error({ err }, 'unhandled_error');

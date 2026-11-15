@@ -3,6 +3,7 @@ import { config } from '../config';
 import { log } from '../logger';
 import { sendSms } from '../twilio/sms';
 import { inTestMode } from '../util/testMode';
+import { sendGuestySms } from '../guesty/communication';
 
 export type Priority = 'urgent' | 'high' | 'normal';
 
@@ -94,7 +95,20 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
   const primary = config.STAFF_PRIMARY_NUMBER;
   const backup = config.STAFF_BACKUP_NUMBER;
 
-  if (primary) {
+  // Guesty text channel (15 Nov 2026): the alert posts into the "Ava Alerts - Front Desk" Guesty
+  // conversation and Guesty texts it to the desk phone. While it is on, the Twilio texts are skipped:
+  // every one of them was undelivered (30034) and they only add noise.
+  const guestyConversation = config.GUESTY_ALERT_CONVERSATION_ID;
+  const twilioSms = !guestyConversation || config.STAFF_ALERT_TWILIO_SMS;
+  if (guestyConversation) {
+    jobs.push(
+      sendGuestySms(guestyConversation, smsFor(alert)).then((ok) => {
+        if (ok) notified.push('guesty_sms');
+      }),
+    );
+  }
+
+  if (primary && twilioSms) {
     jobs.push(
       sendSms(primary, smsFor(alert)).then((ok) => {
         if (ok) notified.push('sms_primary');
@@ -104,7 +118,7 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
 
   // Every alert is also texted to the front desk line, unless it is the primary already.
   const desk = config.STAFF_DESK_SMS_NUMBER;
-  if (desk && desk !== primary) {
+  if (desk && desk !== primary && twilioSms) {
     jobs.push(
       sendSms(desk, smsFor(alert)).then((ok) => {
         if (ok) notified.push('sms_desk');
@@ -124,7 +138,7 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
         }
       }),
     );
-    if (backup) {
+    if (backup && twilioSms) {
       jobs.push(
         sendSms(backup, smsFor(alert)).then((ok) => {
           if (ok) notified.push('sms_backup');

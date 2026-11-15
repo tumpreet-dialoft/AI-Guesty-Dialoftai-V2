@@ -46,7 +46,15 @@ router.get('/ops/sms_status', async (_req: Request, res: Response) => {
       summary[who] = summary[who] ?? {};
       summary[who][key] = (summary[who][key] ?? 0) + 1;
     }
+    const calls = await twilio().calls.list({ from: config.TWILIO_FROM, limit: 20 }).catch(() => []);
+    const voice = calls.map((c) => ({
+      at: c.dateCreated ? new Date(c.dateCreated).toISOString().slice(0, 16) : null,
+      to: labelFor(c.to),
+      status: c.status,
+      seconds: Number(c.duration ?? 0),
+    }));
     res.json({
+      voice_alerts: voice,
       from: `…${last4(config.TWILIO_FROM)}`,
       staff: {
         primary: `…${last4(config.STAFF_PRIMARY_NUMBER)}`,

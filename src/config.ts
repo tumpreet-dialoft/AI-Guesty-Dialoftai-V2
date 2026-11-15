@@ -64,6 +64,12 @@ const baseSchema = z.object({
   // The hotel's front desk line (Michelle, 9 Nov 2026: "push text messages from Ava to 903-426-8958").
   // Texts only, never a call: this line forwards calls to Ava herself. Set to '' to switch off.
   STAFF_DESK_SMS_NUMBER: z.string().default('+19034268958'),
+  // 15 Nov 2026: Twilio texts from Ava's number are undeliverable (30034, A2P campaign rejected), so
+  // staff alerts go through Guesty's texting into a dedicated "Ava Alerts - Front Desk" conversation,
+  // the channel guest booking links already use. Set = Guesty is the alert text channel.
+  GUESTY_ALERT_CONVERSATION_ID: z.string().default(''),
+  // Also send the Twilio texts while Guesty is on (only useful once the Twilio campaign is approved).
+  STAFF_ALERT_TWILIO_SMS: boolString,
 
   // n8n. Owns delivery of receipts and the pre-arrival email re-send, because
   // Guesty exposes no public endpoint for either.
