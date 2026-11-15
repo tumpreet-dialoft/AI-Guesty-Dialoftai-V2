@@ -39,7 +39,8 @@ function spokenFor(a: StaffAlert): string {
 
 function smsFor(a: StaffAlert): string {
   const tag = a.priority === 'urgent' ? 'URGENT' : a.priority === 'high' ? 'ACTION' : 'FYI';
-  return `[${tag}] ${a.caller_name} - ${a.reason}\n${a.details}\nCall back: ${a.callback_number}`;
+  // Business name first: carriers and Twilio's A2P review expect every text to say who sent it.
+  return `Thomas Hotel Ava [${tag}] ${a.caller_name} - ${a.reason}\n${a.details}\nCall back: ${a.callback_number}`;
 }
 
 /**
