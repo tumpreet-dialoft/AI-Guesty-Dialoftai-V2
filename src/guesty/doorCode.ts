@@ -77,6 +77,24 @@ export function resetDoorCodeCache(): void {
   fieldNames = null;
 }
 
+// Test mode only: every key path in a Guesty object that sounds like a code or access
+// instruction, with its value masked. Finds where a hotel keeps codes without seeing one.
+const CODEISH_PATH = /door|lock|key|access|entry|gate|pin|instruction|checkin|check_in|arrival|wifi|code/i;
+const NOISE_PATH = /confirmationCode|currency|countryCode|zipcode|postalCode|languageCode|integration\.|_id$|Id$|ids?\[|picture|image|url$|timezone/i;
+function codeishPaths(o: unknown, path = '', out: string[] = [], depth = 0): string[] {
+  if (out.length >= 60 || depth > 6 || o === null || o === undefined) return out;
+  if (Array.isArray(o)) {
+    o.slice(0, 10).forEach((x, i) => codeishPaths(x, `${path}[${i}]`, out, depth + 1));
+    return out;
+  }
+  if (typeof o === 'object') {
+    for (const [k, v] of Object.entries(o as Record<string, unknown>)) codeishPaths(v, path ? `${path}.${k}` : k, out, depth + 1);
+    return out;
+  }
+  if (CODEISH_PATH.test(path) && !NOISE_PATH.test(path) && String(o).trim() !== '') out.push(`${path} = ${maskShape(o)}`);
+  return out;
+}
+
 export async function findDoorCode(reservationId: string, opts: { diagnose?: boolean } = {}): Promise<DoorCodeResult> {
   const candidates: DoorCodeCandidate[] = [];
   const errors: string[] = [];
@@ -137,6 +155,21 @@ export async function findDoorCode(reservationId: string, opts: { diagnose?: boo
       }
     } catch (err) {
       errors.push(`custom_fields: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  if (opts.diagnose) {
+    try {
+      diag.reservation_codeish = codeishPaths(await guestyFetch('open_api', 'GET', `/reservations/${id}`));
+    } catch (err) {
+      errors.push(`reservation_full: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+    }
+    if (listingId) {
+      try {
+        diag.listing_codeish = codeishPaths(await guestyFetch('open_api', 'GET', `/listings/${encodeURIComponent(listingId)}`));
+      } catch (err) {
+        errors.push(`listing: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+      }
     }
   }
 
