@@ -118,7 +118,8 @@ describe('POST /get_quote', () => {
         number_of_guests: '2',
       });
 
+    // The route now tells the agent what happened instead of a bare error: true.
     expect(res.status).toBe(200);
-    expect(res.body.error).toBe(true);
+    expect(res.body.error).toContain('did not answer');
   });
 });
