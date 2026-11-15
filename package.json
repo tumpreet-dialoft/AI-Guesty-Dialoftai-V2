@@ -1,6 +1,6 @@
 {
   "name": "thomas-hotel-middleware",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Middleware between Retell AI voice agent and Guesty/Twilio for The Thomas Hotel",
   "main": "dist/index.js",
   "scripts": {

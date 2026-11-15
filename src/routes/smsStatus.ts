@@ -62,4 +62,44 @@ router.get('/ops/sms_status', async (_req: Request, res: Response) => {
   }
 });
 
+// Why are texts undelivered? 30034 = the sending number is not in a registered A2P 10DLC
+// campaign. This reports what the Twilio account has registered, read-only.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function safe<T>(fn: () => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await fn();
+  } catch (err: any) {
+    return { error: String(err?.message ?? err).slice(0, 160) };
+  }
+}
+
+router.get('/ops/sms_registration', async (_req: Request, res: Response) => {
+  const m = (twilio() as any).messaging.v1;
+  const from4 = last4(config.TWILIO_FROM);
+  const brands = await safe(async () =>
+    (await m.brandRegistrations.list({ limit: 10 })).map((b: any) => ({
+      status: b.status, brand_type: b.brandType, identity: b.identityStatus, created: b.dateCreated,
+      failure: b.failureReason ?? b.errors ?? null,
+    })),
+  );
+  const services = await safe(async () => {
+    const out: any[] = [];
+    for (const sv of await m.services.list({ limit: 20 })) {
+      const numbers = await safe(async () => (await m.services(sv.sid).phoneNumbers.list({ limit: 50 })).map((n: any) => last4(n.phoneNumber)));
+      const campaigns = await safe(async () =>
+        (await m.services(sv.sid).usAppToPerson.list({ limit: 10 })).map((c: any) => ({
+          status: c.campaignStatus, usecase: c.usAppToPersonUsecase, errors: c.errors ?? null, created: c.dateCreated,
+        })),
+      );
+      out.push({ name: sv.friendlyName, has_ava_number: Array.isArray(numbers) ? numbers.includes(from4) : numbers, campaigns });
+    }
+    return out;
+  });
+  const tollfree = await safe(async () =>
+    (await m.tollfreeVerifications.list({ limit: 10 })).map((t: any) => ({ status: t.status, rejection: t.rejectionReason ?? null })),
+  );
+  res.json({ from: `…${from4}`, brands, services, tollfree });
+});
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 export { router as smsStatusRouter };
