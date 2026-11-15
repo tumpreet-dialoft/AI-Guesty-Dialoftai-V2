@@ -6,7 +6,7 @@ import { inTestMode } from '../util/testMode';
 import { nameScore, NAME_MATCH_THRESHOLD } from '../util/fuzzy';
 import { addDays, todayInTyler } from '../util/stayStatus';
 import { findByConfirmationCode } from '../guesty/reservationSearch';
-import { findDoorCode, maskShape } from '../guesty/doorCode';
+import { findDoorCode, maskShape, digitsMasked } from '../guesty/doorCode';
 
 // Michelle, 9 + 12 Nov 2026: Ava may give a guest their door code once she has verified
 // the name, the dates and the confirmation number; if she can't find it or the caller has
@@ -105,7 +105,10 @@ router.post('/get_door_code', async (req: Request, res: Response) => {
         test_mode: true,
         source: found.best?.source ?? null,
         code_shape: found.best ? maskShape(found.best.code) : null,
-        candidates: found.candidates.map((c) => ({ source: c.source, label: c.label, shape: maskShape(c.raw), usable: Boolean(c.code) })),
+        after: found.best?.after ?? null,
+        candidates: found.candidates.map((c) => ({
+          source: c.source, label: c.label, shape: maskShape(c.raw), digits_masked: digitsMasked(c.raw), usable: Boolean(c.code), after: c.after,
+        })),
         errors: found.errors,
         diag: found.diag,
         suite: r.suite,
@@ -120,14 +123,16 @@ router.post('/get_door_code', async (req: Request, res: Response) => {
     }
 
     const code = found.best.code;
-    const spoken = code.split('').map((ch) => (ch === '#' ? 'pound' : ch === '*' ? 'star' : ch)).join(', ');
+    const digits = code.split('').map((ch) => (ch === '#' ? 'pound' : ch === '*' ? 'star' : ch)).join(', ');
+    const spoken = found.best.after ? `${digits}, ${found.best.after}` : digits;
     log.info({ requestId, reservationId: r.reservation_id, source: found.best.source }, 'door_code_given');
     res.json({
       ok: true,
       door_code: code,
       door_code_spoken: spoken,
+      press_after: found.best.after,
       suite: r.suite,
-      message: `Door code for ${r.suite}: ${spoken}. Read it slowly, one digit at a time, then offer to repeat it.`,
+      message: `Door code for ${r.suite}: ${spoken}. Read the digits slowly, one at a time${found.best.after ? ', then say which key to press' : ''}, and offer to repeat it.`,
     });
   } catch (err) {
     log.error({ err, requestId, route: '/get_door_code' }, 'handler_failed');

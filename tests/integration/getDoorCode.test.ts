@@ -10,7 +10,7 @@ vi.mock('../../src/util/sleep', () => ({ sleep: () => Promise.resolve() }));
 
 import { app } from '../../src/index';
 import { todayInTyler, addDays } from '../../src/util/stayStatus';
-import { cleanDoorCode, resetDoorCodeCache } from '../../src/guesty/doorCode';
+import { cleanDoorCode, doorCodeAfter, resetDoorCodeCache } from '../../src/guesty/doorCode';
 import { resetDoorCodeFailures } from '../../src/routes/getDoorCode';
 
 const SECRET = 'test-secret-123';
@@ -21,6 +21,7 @@ interface World {
   checkOut: string;
   status: string;
   keyCode?: unknown;
+  topKeyCode?: unknown;
   customFields?: { fieldId: string; value: unknown }[];
   guestCode?: unknown; // object, or an Error to throw
 }
@@ -43,7 +44,7 @@ function routeGuestyFetch(method: string, path: string): unknown {
     };
   }
   if (path.startsWith('/reservations/res_1')) {
-    return { _id: 'res_1', notes: { keyCode: world.keyCode }, customFields: world.customFields ?? [] };
+    return { _id: 'res_1', keyCode: world.topKeyCode, notes: { keyCode: world.keyCode }, customFields: world.customFields ?? [] };
   }
   if (path.startsWith('/guest-code')) {
     if (world.guestCode instanceof Error) throw world.guestCode;
@@ -82,6 +83,25 @@ describe('POST /get_door_code', () => {
     expect(res.body.door_code).toBe('4821');
     expect(res.body.door_code_spoken).toBe('4, 8, 2, 1');
     expect(res.body.suite).toBe('Garden Suite');
+  });
+
+  it('reads the top-level keyCode the hotel uses, with the key to press after it', async () => {
+    world.keyCode = undefined;
+    world.topKeyCode = '482193(✓ or ✱)';
+    const res = await ask(good());
+    expect(res.body.ok).toBe(true);
+    expect(res.body.door_code).toBe('482193');
+    expect(res.body.press_after).toBe('then press check mark or star');
+    expect(res.body.door_code_spoken).toBe('4, 8, 2, 1, 9, 3, then press check mark or star');
+  });
+
+  it('test mode shows the key note but masks every digit', async () => {
+    world.keyCode = undefined;
+    world.topKeyCode = '482193(✓ or ✱)';
+    const res = await ask(good(), { call: { call_id: 'playground' } });
+    expect(res.body.after).toBe('then press check mark or star');
+    expect(res.body.candidates[0].digits_masked).toBe('999999(✓ or ✱)');
+    expect(JSON.stringify(res.body)).not.toMatch(/482193/);
   });
 
   it('accepts a first name only, as callers say it', async () => {
@@ -194,6 +214,19 @@ describe('POST /get_door_code', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(false);
     expect(res.body.transfer).toBe(true);
+  });
+});
+
+describe('doorCodeAfter', () => {
+  it.each([
+    ['482193(✓ or ✱)', '482193', 'then press check mark or star'],
+    ['4821 then #', '4821', 'then pound'],
+    ['4821#', '4821#', null],
+    ['4821', '4821', null],
+    ['4821 (front door, side gate 7731)', '4821', null],
+    ['Code 4821, see the welcome email', '4821', null],
+  ])('%s', (raw, code, want) => {
+    expect(doorCodeAfter(raw, code)).toBe(want);
   });
 });
 

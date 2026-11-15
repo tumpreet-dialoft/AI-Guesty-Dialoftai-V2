@@ -4,7 +4,8 @@ import { log } from '../logger';
 // Where a reservation's door code can live in Guesty. Michelle (12 Nov 2026): "The code is
 // listed in Guesty on the 'overview' page". Guesty has three places that can hold it, so we
 // read all three and take the first value that looks like a code:
-//   key_code      reservation notes.keyCode ("key code for workflow automation")
+//   key_code      reservation keyCode (top level; where The Thomas Hotel keeps it, seen 15 Nov 2026
+//                 as six digits then a key note like "(✓ or ✱)"), else notes.keyCode
 //   lock_manager  Guesty Locks Manager, GET /guest-code?reservationId=
 //   custom_field  a reservation custom field named like door / key code / lock / access / entry
 export type DoorCodeSource = 'key_code' | 'lock_manager' | 'custom_field';
@@ -14,6 +15,7 @@ export interface DoorCodeCandidate {
   label: string;
   raw: unknown;
   code: string | null;
+  after: string | null; // the key to press after the code, in words ("then press check mark or star")
 }
 
 export interface DoorCodeResult {
@@ -41,6 +43,30 @@ export function cleanDoorCode(raw: unknown): string | null {
   // Whole digit runs only, so a phone number in the note never becomes a "code".
   const runs = s.match(/(?<![0-9])[0-9][0-9#*]{2,8}(?![0-9])/g) ?? [];
   return runs.length === 1 ? runs[0] : null;
+}
+
+const KEY_SYMBOLS: [RegExp, string][] = [
+  [/[✓✔☑√]/g, ' check mark '],
+  [/[✱✲✳✴★☆*]/g, ' star '],
+  [/[#＃]/g, ' pound '],
+];
+
+/**
+ * What the booking says to press after the digits, in words a voice can say. "482193(✓ or ✱)"
+ * gives "then press check mark or star". Long or odd leftovers give null: the code is still read.
+ */
+export function doorCodeAfter(raw: unknown, code: string | null): string | null {
+  if (typeof raw !== 'string' || !code) return null;
+  let rest = raw.replace(code, ' ');
+  for (const [rx, word] of KEY_SYMBOLS) rest = rest.replace(rx, word);
+  rest = rest.replace(/[()[\]{},.:;!_-]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!rest || rest.length > 32 || /[0-9]/.test(rest) || !/check mark|star|pound/.test(rest)) return null;
+  return /^(then|press|and)\b/.test(rest) ? rest : `then press ${rest}`;
+}
+
+/** Test mode: the raw value with every digit masked, so the non-secret part (key symbols) shows. */
+export function digitsMasked(raw: unknown): string | null {
+  return raw === null || raw === undefined ? null : String(raw).replace(/[0-9]/g, '9').slice(0, 40);
 }
 
 /** "str[4] 9999": the shape of a value with every digit and letter masked. For logs and test mode. */
@@ -109,11 +135,13 @@ export async function findDoorCode(reservationId: string, opts: { diagnose?: boo
     const r = (await guestyFetch(
       'open_api',
       'GET',
-      `/reservations/${id}?fields=${encodeURIComponent('notes customFields listingId')}`,
+      `/reservations/${id}?fields=${encodeURIComponent('keyCode notes customFields listingId')}`,
     )) as any;
     const res = r?.result ?? r;
-    if (res?.notes?.keyCode !== undefined && res?.notes?.keyCode !== '') {
-      candidates.push({ source: 'key_code', label: 'notes.keyCode', raw: res.notes.keyCode, code: cleanDoorCode(res.notes.keyCode) });
+    for (const [label, raw] of [['keyCode', res?.keyCode], ['notes.keyCode', res?.notes?.keyCode]] as const) {
+      if (raw === undefined || raw === null || raw === '') continue;
+      const code = cleanDoorCode(raw);
+      candidates.push({ source: 'key_code', label, raw, code, after: doorCodeAfter(raw, code) });
     }
     if (Array.isArray(res?.customFields)) customValues = res.customFields;
     listingId = res?.listingId ?? res?.listing?._id ?? null;
@@ -134,7 +162,8 @@ export async function findDoorCode(reservationId: string, opts: { diagnose?: boo
     if (opts.diagnose) diag.lock_manager = { codes: (g?.codes ?? []).length, locks: (g?.locks ?? []).length };
     for (const c of g?.codes ?? []) {
       if (DEAD_CODE_STATUS.test(String(c?.status ?? ''))) continue;
-      candidates.push({ source: 'lock_manager', label: `guest-code ${c?.purpose ?? ''} ${c?.status ?? ''}`.trim(), raw: c?.code, code: cleanDoorCode(c?.code) });
+      const code = cleanDoorCode(c?.code);
+      candidates.push({ source: 'lock_manager', label: `guest-code ${c?.purpose ?? ''} ${c?.status ?? ''}`.trim(), raw: c?.code, code, after: doorCodeAfter(c?.code, code) });
     }
   } catch (err) {
     errors.push(`lock_manager: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
@@ -150,7 +179,8 @@ export async function findDoorCode(reservationId: string, opts: { diagnose?: boo
       for (const f of customValues) {
         const name = names.get(String(f?.fieldId ?? '')) ?? '';
         if (name && DOORISH.test(name)) {
-          candidates.push({ source: 'custom_field', label: name, raw: f?.value, code: cleanDoorCode(f?.value) });
+          const code = cleanDoorCode(f?.value);
+          candidates.push({ source: 'custom_field', label: name, raw: f?.value, code, after: doorCodeAfter(f?.value, code) });
         }
       }
     } catch (err) {
