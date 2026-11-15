@@ -126,18 +126,25 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
     );
   }
 
-  if (alert.priority === 'urgent' && primary) {
+  // Urgent: ring a person. Never the desk line: it forwards to Ava, and Twilio's log shows every
+  // urgent call to it went unanswered or failed (14 + 15 Nov 2026). In production the primary IS
+  // the desk line, so the call goes to the backup (Andrew, set by the hotel's team).
+  const voiceTargets = [primary, backup].filter(
+    (n, i, all): n is string => Boolean(n) && n !== desk && all.indexOf(n) === i,
+  );
+  if (alert.priority === 'urgent' && voiceTargets.length) {
     jobs.push(
-      callStaff(primary, spokenFor(alert)).then(async (ok) => {
-        if (ok) {
-          notified.push('voice_primary');
-          return;
+      (async () => {
+        for (const n of voiceTargets) {
+          if (await callStaff(n, spokenFor(alert))) {
+            notified.push(n === primary ? 'voice_primary' : 'voice_backup');
+            return;
+          }
         }
-        if (backup && (await callStaff(backup, spokenFor(alert)))) {
-          notified.push('voice_backup');
-        }
-      }),
+      })(),
     );
+  }
+  if (alert.priority === 'urgent') {
     if (backup && twilioSms) {
       jobs.push(
         sendSms(backup, smsFor(alert)).then((ok) => {
