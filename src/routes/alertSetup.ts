@@ -6,6 +6,7 @@ import { createGuest } from '../guesty/guests';
 import { createInquiryReservation } from '../guesty/reservations';
 import { findConversationByReservationId, sendGuestySms } from '../guesty/communication';
 import { sleep } from '../util/sleep';
+import { alertConversations } from '../alerts/staffAlert';
 
 // One-time setup for the Guesty alert channel (15 Nov 2026, Kavish: "go with Guesty").
 // Guesty only texts inside a conversation, and a conversation needs a guest plus a reservation,
@@ -53,8 +54,8 @@ router.post('/ops/setup_alert_conversation', async (req: Request, res: Response)
 
 // Sends one text through the configured alert conversation, nothing else (no Twilio, no webhook).
 router.post('/ops/alert_channel_check', async (req: Request, res: Response) => {
-  const conv = config.GUESTY_ALERT_CONVERSATION_ID;
-  if (!conv) {
+  const convs = alertConversations();
+  if (!convs.length) {
     res.json({ ok: false, message: 'GUESTY_ALERT_CONVERSATION_ID is not set' });
     return;
   }
@@ -63,8 +64,11 @@ router.post('/ops/alert_channel_check', async (req: Request, res: Response) => {
     res.json({ ok: false, message: 'text required' });
     return;
   }
-  const ok = await sendGuestySms(conv, text.slice(0, 480));
-  res.json({ ok, conversation: `…${conv.slice(-4)}` });
+  const only = String(req.body?.only ?? '').trim();
+  const targets = only ? convs.filter((c) => c.endsWith(only)) : convs;
+  const results = [];
+  for (const c of targets) results.push({ conversation: `…${c.slice(-4)}`, ok: await sendGuestySms(c, text.slice(0, 480)) });
+  res.json({ ok: results.length > 0 && results.every((r) => r.ok), results });
 });
 
 export { router as alertSetupRouter };

@@ -88,6 +88,11 @@ async function callStaff(to: string, spoken: string): Promise<boolean> {
  * Everything fires in parallel and nothing throws: a guest is on the line, and an
  * alerting failure must not take the call down with it.
  */
+/** The Guesty alert conversations, from GUESTY_ALERT_CONVERSATION_ID (comma-separated). */
+export function alertConversations(): string[] {
+  return [...new Set(String(config.GUESTY_ALERT_CONVERSATION_ID ?? '').split(',').map((s) => s.trim()).filter(Boolean))];
+}
+
 export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: string[] }> {
   const notified: string[] = [];
   const jobs: Promise<unknown>[] = [];
@@ -98,12 +103,15 @@ export async function raiseStaffAlert(alert: StaffAlert): Promise<{ notified: st
   // Guesty text channel (15 Nov 2026): the alert posts into the "Ava Alerts - Front Desk" Guesty
   // conversation and Guesty texts it to the desk phone. While it is on, the Twilio texts are skipped:
   // every one of them was undelivered (30034) and they only add noise.
-  const guestyConversation = config.GUESTY_ALERT_CONVERSATION_ID;
-  const twilioSms = !guestyConversation || config.STAFF_ALERT_TWILIO_SMS;
-  if (guestyConversation) {
+  // 23 Nov 2026: a comma-separated list texts several people (front desk + Michelle), one
+  // dedicated Guesty conversation each. "guesty_sms" is reported when at least one went out.
+  const guestyConversations = alertConversations();
+  const twilioSms = guestyConversations.length === 0 || config.STAFF_ALERT_TWILIO_SMS;
+  if (guestyConversations.length) {
+    const body = smsFor(alert);
     jobs.push(
-      sendGuestySms(guestyConversation, smsFor(alert)).then((ok) => {
-        if (ok) notified.push('guesty_sms');
+      Promise.all(guestyConversations.map((c) => sendGuestySms(c, body).catch(() => false))).then((oks) => {
+        if (oks.some(Boolean)) notified.push('guesty_sms');
       }),
     );
   }

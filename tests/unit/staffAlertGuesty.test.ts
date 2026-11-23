@@ -84,6 +84,26 @@ describe('staff alerts through Guesty', () => {
     expect(notified).toContain('sms_primary');
   });
 
+  it('a comma-separated list texts every conversation (desk + Michelle), once each', async () => {
+    cfg.GUESTY_ALERT_CONVERSATION_ID = 'conv_alerts, conv_michelle,conv_alerts';
+    const { notified } = await raiseStaffAlert(alert('high'));
+    expect(guestySms.mock.calls.map((c) => c[0])).toEqual(['conv_alerts', 'conv_michelle']);
+    expect(guestySms.mock.calls[0][1]).toBe(guestySms.mock.calls[1][1]);
+    expect(sms).not.toHaveBeenCalled();
+    expect(notified).toContain('guesty_sms');
+  });
+
+  it('one conversation failing does not stop the other', async () => {
+    cfg.GUESTY_ALERT_CONVERSATION_ID = 'conv_alerts,conv_michelle';
+    guestySms.mockImplementation(async (c: string) => {
+      if (c === 'conv_alerts') throw new Error('boom');
+      return true;
+    });
+    const { notified } = await raiseStaffAlert(alert('normal'));
+    expect(guestySms).toHaveBeenCalledTimes(2);
+    expect(notified).toContain('guesty_sms');
+  });
+
   it('STAFF_ALERT_TWILIO_SMS=true sends both (for when the Twilio campaign is approved)', async () => {
     cfg.STAFF_ALERT_TWILIO_SMS = true;
     const { notified } = await raiseStaffAlert(alert('normal'));
